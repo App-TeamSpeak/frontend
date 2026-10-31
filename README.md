@@ -38,3 +38,9 @@ El repositorio está preparado para Vercel. Configura las variables `VITE_API_UR
 `VITE_REALTIME_URL` en el proyecto de Vercel usando las URLs públicas de Render.
 
 No guardes secretos en variables `VITE_*`: Vite las expone al navegador.
+
+## Flujo trunk-based
+
+Los cambios se integran en `main` mediante Pull Requests pequeños. Cada PR debe
+usar Conventional Commits, pasar el workflow de CI y contar con una aprobación
+antes de fusionarse mediante **Squash and merge**.
