@@ -56,6 +56,16 @@ contenedor ejecuta:
 make docker-stop
 ```
 
+Para levantar frontend, API y realtime juntos, ejecuta desde el repositorio
+`backend`:
+
+```bash
+docker compose up --build
+```
+
+La aplicación queda disponible en `http://localhost:8080` y la API en
+`http://localhost:10000`.
+
 Puedes cambiar las URLs públicas usadas durante el build con:
 
 ```bash
