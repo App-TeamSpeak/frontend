@@ -1,10 +1,36 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PageContent } from './PageContent';
 import { fetchSprint0Demo, type Sprint0ApiError, type Sprint0Document } from '../services/api';
-function formatValue(value: unknown) { if (typeof value === 'string') return value; if (value === null) return 'null'; if (typeof value === 'object') return JSON.stringify(value, null, 2); return String(value); }
+
+type State = { status: 'loading' } | { status: 'error'; error: Sprint0ApiError } | { status: 'success'; document: Sprint0Document };
+function formatValue(value: unknown) { return typeof value === 'string' ? value : JSON.stringify(value, null, 2); }
 export function VerificationPage() {
-  const [document, setDocument] = useState<Sprint0Document | null>(null); const [isLoading, setIsLoading] = useState(true); const [error, setError] = useState<Sprint0ApiError | null>(null);
-  const loadSprint0 = useCallback(async (signal?: AbortSignal) => { setIsLoading(true); setError(null); try { setDocument(await fetchSprint0Demo(signal)); } catch (requestError) { if (requestError instanceof DOMException && requestError.name === 'AbortError') return; if (requestError instanceof Error) setError({ success: false, code: 'NETWORK_ERROR', message: 'No se pudo conectar con la API.' }); else if (typeof requestError === 'object' && requestError !== null && 'message' in requestError) setError(requestError as Sprint0ApiError); else setError({ success: false, code: 'NETWORK_ERROR', message: 'No se pudo conectar con la API.' }); setDocument(null); } finally { if (!signal?.aborted) setIsLoading(false); } }, []);
-  useEffect(() => { const controller = new AbortController(); void loadSprint0(controller.signal); return () => controller.abort(); }, [loadSprint0]);
-  return <PageContent eyebrow="Sprint 0" title="Documento de verificación"><p className="max-w-2xl text-slate-300">Datos reales obtenidos desde Firestore mediante la API REST desplegada.</p><div className="mt-8" aria-live="polite"><div className="flex flex-wrap items-center justify-between gap-4"><p className="font-mono text-sm text-slate-400">sprint_prueba / verificacion_sprint0</p><button className="rounded-lg border border-cyan-400/50 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/10 focus:outline-none focus:ring-2 focus:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={isLoading} onClick={() => void loadSprint0()} type="button">{isLoading ? 'Consultando…' : 'Actualizar'}</button></div>{isLoading && <p className="mt-6 rounded-xl border border-slate-700 bg-slate-950/60 p-5 text-slate-300">Consultando los datos reales de Firestore…</p>}{!isLoading && error && <div className="mt-6 rounded-xl border border-rose-400/40 bg-rose-950/30 p-5" role="alert"><p className="font-semibold text-rose-200">No se pudo cargar la evidencia</p><p className="mt-2 text-sm text-rose-100/80">{error.message}</p><button className="mt-4 rounded-lg bg-rose-200 px-4 py-2 font-semibold text-rose-950 hover:bg-white" onClick={() => void loadSprint0()} type="button">Reintentar</button></div>}{!isLoading && document && <div className="mt-6 grid gap-4 sm:grid-cols-2">{Object.entries(document).map(([key, value]) => <article className="rounded-xl border border-emerald-400/30 bg-emerald-950/20 p-5" key={key}><p className="font-mono text-xs uppercase tracking-wider text-emerald-300/80">{key}</p><pre className="mt-3 whitespace-pre-wrap break-words font-sans text-base text-slate-100">{formatValue(value)}</pre></article>)}</div>}</div></PageContent>;
+  const [state, setState] = useState<State>({ status: 'loading' });
+  const activeRequest = useRef<AbortController | null>(null);
+  const load = useCallback(async () => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    setState({ status: 'loading' });
+    try {
+      const document = await fetchSprint0Demo(controller.signal);
+      if (!controller.signal.aborted) setState({ status: 'success', document });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const apiError: Sprint0ApiError = typeof error === 'object' && error !== null && 'success' in error && error.success === false && 'message' in error
+        ? error as Sprint0ApiError
+        : { success: false, code: 'NETWORK_ERROR', message: 'No se pudo conectar con la API. Comprueba tu conexión y reintenta.' };
+      setState({ status: 'error', error: apiError });
+    }
+  }, []);
+  useEffect(() => { void load(); return () => activeRequest.current?.abort(); }, [load]);
+  return <PageContent eyebrow="Sprint 0 · Base técnica" title="Documento de verificación">
+    <p className="text-slate-300">Consulta el documento que la API obtiene de Firestore. Puedes actualizarlo para consultar sus cambios.</p>
+    <div className="mt-8 flex flex-wrap items-center justify-between gap-4"><p className="text-sm text-slate-300">Verificación de conexión</p><button className="button secondary" disabled={state.status === 'loading'} onClick={() => void load()} type="button">{state.status === 'loading' ? 'Consultando…' : 'Actualizar'}</button></div>
+    <div className="mt-6" aria-live="polite" aria-busy={state.status === 'loading'}>
+      {state.status === 'loading' && <div className="notice" role="status"><p>Consultando los datos reales de Firestore…</p><p>El servidor puede tardar hasta un minuto en responder al iniciar.</p></div>}
+      {state.status === 'error' && <div className="error-panel" role="alert"><h2>No se pudo cargar el documento</h2><p>{state.error.message}</p><button className="button secondary" onClick={() => void load()} type="button">Reintentar</button></div>}
+      {state.status === 'success' && <div><p className="success-label" role="status">Éxito · Documento recibido de la API.</p>{Object.keys(state.document).length === 0 && <p>El documento existe, pero todavía no contiene campos.</p>}<dl className="document-grid">{Object.entries(state.document).map(([key, value]) => <div className="document-field" key={key}><dt>{key}</dt><dd><pre>{formatValue(value)}</pre></dd></div>)}</dl></div>}
+    </div>
+  </PageContent>;
 }

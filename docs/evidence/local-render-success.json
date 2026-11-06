@@ -1,0 +1,17 @@
+{
+  "checkedAt": "2026-11-05T23:17:47.304Z",
+  "frontend": "Local production build; API base URL replaced by test server with public Render URL. Browser origin localhost:5173; static files served via test routing to port 5180. No API mocking.",
+  "api": {
+    "url": "https://teamspeak-backend-api.onrender.com/api/sprint0/demo",
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "proyecto": "TeamSpeak",
+        "estado": "funcionando",
+        "descripcion": "Verificacion de Cloud Firestore - Sprint 0 Hola profe"
+      }
+    }
+  },
+  "errors": []
+}

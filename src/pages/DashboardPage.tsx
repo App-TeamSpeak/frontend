@@ -1,0 +1,5 @@
+import { Link } from 'react-router-dom';
+import { PageTitle } from '../components/PageTitle';
+export function DashboardPage() {
+  return <section className="dashboard"><div className="dashboard-heading"><div><PageTitle title="Tus salas" /><p>Continúa donde lo dejaste o crea una sala para tu próximo encuentro.</p></div><div className="actions"><Link className="button primary" to="/salas/crear">＋ Crear sala</Link><Link className="button secondary" to="/salas/unirse">＋ Unirse a sala</Link></div></div><div className="empty-room"><div className="empty-icon"><img src="/assets/figma/add-room.svg" alt="" /></div><h2>No tienes salas</h2><p>Cuando crees una sala o te unas con un ID, aparecerá aquí.</p><Link className="button primary" to="/salas/crear">Crear mi primera sala</Link></div><p className="private-note"><img src="/assets/figma/status-dot.svg" alt="" /> Acceso privado · Comparte el ID de una sala solo con quienes deban participar.</p><p className="sprint-notice">Vista previa de Sprint 0. Las salas personales estarán disponibles al habilitar la autenticación.</p></section>;
+}

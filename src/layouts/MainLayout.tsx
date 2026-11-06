@@ -1,4 +1,11 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
 import { Footer } from '../components/Footer';
 import { Header } from '../components/Header';
-export function MainLayout() { return <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100"><a className="skip-link" href="#main-content">Saltar al contenido</a><Header /><main className="mx-auto w-full max-w-6xl flex-1 px-6 py-10" id="main-content"><Outlet /></main><Footer /></div>; }
+export function MainLayout() {
+  const { pathname } = useLocation();
+  const main = useRef<HTMLElement>(null);
+  const previous = useRef(pathname);
+  useEffect(() => { if (previous.current !== pathname) { main.current?.focus(); previous.current = pathname; } }, [pathname]);
+  return <div className="app-shell"><a className="skip-link" href="#main-content">Saltar al contenido</a><Header /><main ref={main} className="main-content" id="main-content" tabIndex={-1}><Outlet /></main><Footer /></div>;
+}

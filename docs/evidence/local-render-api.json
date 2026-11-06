@@ -1,0 +1,9 @@
+{
+  "checkedAt": "2026-11-05T23:15:55.105Z",
+  "frontend": "local http://127.0.0.1:5174",
+  "errors": [
+    "Access to fetch at 'https://teamspeak-backend-api.onrender.com/api/sprint0/demo' from origin 'http://127.0.0.1:5174' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+    "Failed to load resource: net::ERR_FAILED"
+  ],
+  "text": "SPRINT 0 · BASE TÉCNICA\n\nDocumento de verificación\n\nConsulta el documento que la API obtiene de Firestore. Puedes actualizarlo para consultar sus cambios.\n\nVerificación de conexión\n\nActualizar\nNo se pudo cargar el documento\n\nNo se pudo conectar con la API. Comprueba tu conexión y reintenta.\n\nReintentar"
+}
