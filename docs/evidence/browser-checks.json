@@ -1,0 +1,169 @@
+{
+  "baseUrl": "http://127.0.0.1:5173",
+  "date": "2026-11-05T23:14:37.815Z",
+  "results": [
+    {
+      "width": 1440,
+      "path": "/login",
+      "title": "Bienvenido de nuevo | TeamSpeak",
+      "overflow": false,
+      "images": []
+    },
+    {
+      "width": 1440,
+      "path": "/registro",
+      "title": "Crear cuenta | TeamSpeak",
+      "overflow": false,
+      "images": []
+    },
+    {
+      "width": 1440,
+      "path": "/dashboard",
+      "title": "Tus salas | TeamSpeak",
+      "overflow": false,
+      "images": [
+        {
+          "src": "/assets/figma/add-room.svg",
+          "loaded": true,
+          "width": 36,
+          "height": 36
+        },
+        {
+          "src": "/assets/figma/status-dot.svg",
+          "loaded": true,
+          "width": 8,
+          "height": 8
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "path": "/no-existe",
+      "title": "Página no encontrada | TeamSpeak",
+      "overflow": false,
+      "images": []
+    },
+    {
+      "width": 1440,
+      "path": "/salas/vista-previa",
+      "title": "Sala vista-previa | TeamSpeak",
+      "overflow": false,
+      "images": [
+        {
+          "src": "/assets/figma/mic-off.svg",
+          "loaded": true,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "src": "/assets/figma/camera-off.svg",
+          "loaded": true,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "src": "/assets/figma/share.svg",
+          "loaded": true,
+          "width": 20,
+          "height": 20
+        },
+        {
+          "src": "/assets/figma/exit.svg",
+          "loaded": true,
+          "width": 20,
+          "height": 20
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "path": "/login",
+      "title": "Bienvenido de nuevo | TeamSpeak",
+      "overflow": false,
+      "images": []
+    },
+    {
+      "width": 390,
+      "path": "/registro",
+      "title": "Crear cuenta | TeamSpeak",
+      "overflow": false,
+      "images": []
+    },
+    {
+      "width": 390,
+      "path": "/dashboard",
+      "title": "Tus salas | TeamSpeak",
+      "overflow": false,
+      "images": [
+        {
+          "src": "/assets/figma/add-room.svg",
+          "loaded": true,
+          "width": 36,
+          "height": 36
+        },
+        {
+          "src": "/assets/figma/status-dot.svg",
+          "loaded": true,
+          "width": 8,
+          "height": 8
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "path": "/no-existe",
+      "title": "Página no encontrada | TeamSpeak",
+      "overflow": false,
+      "images": []
+    },
+    {
+      "width": 390,
+      "path": "/salas/vista-previa",
+      "title": "Sala vista-previa | TeamSpeak",
+      "overflow": false,
+      "images": [
+        {
+          "src": "/assets/figma/mic-off.svg",
+          "loaded": true,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "src": "/assets/figma/camera-off.svg",
+          "loaded": true,
+          "width": 16,
+          "height": 16
+        },
+        {
+          "src": "/assets/figma/share.svg",
+          "loaded": true,
+          "width": 20,
+          "height": 20
+        },
+        {
+          "src": "/assets/figma/exit.svg",
+          "loaded": true,
+          "width": 20,
+          "height": 20
+        }
+      ]
+    },
+    {
+      "check": "skip-link",
+      "focused": "Saltar al contenido"
+    },
+    {
+      "check": "login-validation",
+      "focused": "user",
+      "invalid": 2
+    },
+    {
+      "check": "error-retry-success-simulated",
+      "calls": 3,
+      "success": true
+    }
+  ],
+  "errors": [
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+  ]
+}

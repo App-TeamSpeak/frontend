@@ -1,3 +1,7 @@
-import { Link, NavLink } from 'react-router-dom';
-const navigation = [{ to: '/', label: 'Inicio', end: true }, { to: '/dashboard', label: 'Panel' }, { to: '/ayuda', label: 'Ayuda' }, { to: '/perfil', label: 'Perfil' }];
-export function Header() { return <header className="border-b border-slate-800 bg-slate-950/95"><div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between"><Link className="text-xl font-bold tracking-tight text-cyan-300" to="/">TeamSpeak</Link><nav aria-label="Navegación principal"><ul className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-slate-300">{navigation.map(({ to, label, end }) => <li key={to}><NavLink className={({ isActive }) => isActive ? 'text-cyan-300 underline decoration-cyan-400 underline-offset-4' : 'transition hover:text-cyan-200'} end={end} to={to}>{label}</NavLink></li>)}</ul></nav></div></header>; }
+import { Link, NavLink, useLocation } from 'react-router-dom';
+const navigation = [{ to: '/', label: 'Inicio', end: true }, { to: '/dashboard', label: 'Mis salas' }, { to: '/verificacion', label: 'Base técnica' }, { to: '/ayuda', label: 'Ayuda' }, { to: '/perfil', label: 'Perfil' }];
+export function Header() {
+  const { pathname } = useLocation();
+  const auth = ['/login', '/registro'].includes(pathname);
+  return <header className="site-header"><div className="header-inner"><Link className="brand" to="/" aria-label="TeamSpeak · Inicio"><span aria-hidden="true">T</span>TeamSpeak</Link>{!auth && <nav aria-label="Navegación principal"><ul>{navigation.map(({ to, label, end }) => <li key={to}><NavLink end={end} to={to}>{label}</NavLink></li>)}</ul></nav>}</div></header>;
+}
