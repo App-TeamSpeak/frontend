@@ -80,34 +80,33 @@ Los cambios se integran en `main` mediante Pull Requests pequeños. Cada PR debe
 usar Conventional Commits, pasar el workflow de CI y contar con una aprobación
 antes de fusionarse mediante **Squash and merge**.
 
-## Sprint 0 · S0-C04 y S0-C05
+## Navegación SPA
 
 Requiere Node 24. Usa `npm ci` para una instalación reproducible.
-La ruta `/verificacion` consulta `GET /api/sprint0/demo` sin caché, valida el
-contrato `{ success: true, data: { ... } }` y muestra cargando, error con
-Reintentar, éxito y documento vacío. La petición se cancela al salir de la
-pantalla y tiene un límite de 60 segundos para el arranque en frío de Render.
-No hay SDK ni credenciales Firestore en el frontend.
+La aplicación inicia en `/login` y mantiene un flujo SPA centrado en
+autenticación, perfil, salas, ayuda y accesibilidad. Mientras el backend de
+identidad no está disponible, `src/services/auth.ts` ofrece un mock local
+documentado para probar el flujo completo de registro, username, sesión y
+cierre de sesión. No debe usarse como almacenamiento de credenciales en
+producción.
 
 ### Navegación
 
 | Ruta | Pantalla |
 | --- | --- |
-| `/` | Inicio |
 | `/login`, `/registro` | Ingreso y registro según Figma |
-| `/recuperar-contrasena` | Recuperación de contraseña |
-| `/completar-username`, `/perfil` | Completar perfil y perfil |
-| `/dashboard` | Mis salas, vista previa vacía |
-| `/salas/crear`, `/salas/unirse` | Crear sala y unirse por ID |
+| `/` | Redirección al ingreso |
+| `/completar-username`, `/perfil` | Completar username y perfil protegido |
+| `/dashboard` | Mis salas |
 | `/salas/:id` | Estructura de sala, participantes y chat plegables, salida al panel |
 | `/ayuda`, `/accesibilidad` | Apoyo |
-| `/verificacion` | Base técnica conectada a la API |
-| Cualquier otra | 404 con retorno al inicio |
+| Cualquier otra | 404 con retorno al ingreso |
 
-Las pantallas de cuentas y salas son estructura del Sprint 0: validan campos
-localmente y explican las acciones aún no disponibles. No crean sesiones, salas,
-participantes ni mensajes ficticios. Las rutas privadas son vistas previas públicas;
-la autorización real se implementará con la historia de autenticación.
+Las pantallas de cuentas y salas validan los datos disponibles en el navegador.
+El mock de autenticación crea una sesión pendiente después del registro, obliga
+a completar el username antes de entrar al dashboard y protege las rutas
+privadas. La creación de salas, participantes y mensajes continúa siendo local;
+la sesión real deberá sustituirse por endpoints del backend.
 
 ### Diseño
 
@@ -117,8 +116,8 @@ Se revisaron ingreso `7:164`, registro `78:105`, dashboard `7:218`, estado vací
 Inter y Source Sans 3 se distribuyen localmente mediante Fontsource. Los SVG en
 `public/assets/figma` proceden del diseño y no dependen de URLs temporales.
 Colores y componentes compartidos están en `src/index.css`.
-Inicio, ayuda, perfil, recuperación, base técnica y 404 aplican la guía visual;
-no hay frames específicos de estas pantallas en las páginas de Figma revisadas.
+Ayuda, perfil, accesibilidad y 404 aplican la guía visual; no hay frames
+específicos de estas pantallas en las páginas de Figma revisadas.
 
 ### Compose y despliegue
 
