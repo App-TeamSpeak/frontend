@@ -34,7 +34,7 @@ describe('RoomPage', () => {
 
     rerender(<PictureInPictureStrip participants={[1, 2, 3, 4, 5, 6, 7].map(makeParticipant)} />);
     expect(screen.getAllByRole('article')).toHaveLength(4);
-    expect(screen.getByRole('region', { name: 'Participantes de la presentación' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('region', { name: 'Participantes de la presentación' })).not.toHaveAttribute('tabindex');
     expect(screen.getByText('+3')).toBeInTheDocument();
     expect(screen.getByLabelText('3 participantes adicionales')).toBeInTheDocument();
   });

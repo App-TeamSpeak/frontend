@@ -29,6 +29,7 @@ describe('Authentication system states', () => {
     expect(screen.getByLabelText('Usuario o correo electrónico')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Ingresa tu usuario o correo electrónico')).toBeInTheDocument();
     expect(screen.getByLabelText('Usuario o correo electrónico')).toHaveFocus();
+    expect(screen.getByLabelText('Usuario o correo electrónico')).toHaveAttribute('aria-describedby', 'error-user');
   });
 
   it('reports only the empty login password when the user is present', () => {
@@ -84,6 +85,8 @@ describe('Authentication system states', () => {
     expect(screen.getByText('Introduce un correo electrónico válido.')).toBeInTheDocument();
     expect(screen.getByText('Las contraseñas no coinciden.')).toBeInTheDocument();
     expect(screen.getByLabelText('Correo electrónico')).toHaveFocus();
+    expect(screen.getByLabelText('Correo electrónico')).toHaveAttribute('aria-describedby', 'error-email');
+    expect(screen.getByLabelText('Confirmar contraseña')).toHaveAttribute('aria-describedby', 'error-confirm');
   });
 
   it('keeps the existing login and registration links', () => {

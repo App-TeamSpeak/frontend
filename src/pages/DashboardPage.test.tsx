@@ -322,6 +322,8 @@ describe('Dashboard de salas', () => {
     expect(screen.getByRole('radio', { name: /Pública/ })).toBeChecked();
     expect(screen.getByRole('radio', { name: /Privada/ })).not.toBeChecked();
     expect(screen.getByRole('radio', { name: /Pública/ }).closest('label')).toHaveClass('room-privacy-option-selected');
+    expect(screen.getByRole('radio', { name: /Privada/ })).toHaveAttribute('id', 'room-privacy-private');
+    expect(screen.getByRole('radio', { name: /Pública/ })).toHaveAttribute('id', 'room-privacy-public');
 
     fireEvent.click(screen.getByRole('button', { name: 'Crear sala' }));
 

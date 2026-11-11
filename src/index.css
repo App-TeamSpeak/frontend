@@ -344,16 +344,16 @@ button:not(:disabled), .button { cursor: pointer; }
   .auth-shell:not(.register-shell) .auth-intro { padding-top: 70px; }
   .auth-shell:not(.register-shell) .study-illustration { height: 420px; margin-top: 23px; padding: 58px 50px; }
   .auth-shell:not(.register-shell) .study-card { height: 280px; padding: 26px; }
-  .auth-shell:not(.register-shell) .auth-card { flex: 0 0 700px; width: 600px; height: 700px; min-height: 700px; padding: 44px 51px 24px; }
+  .auth-shell:not(.register-shell) .auth-card { flex: 0 0 600px; width: 600px; height: auto; min-height: min(700px, calc(100dvh - 180px)); padding: 44px 51px 24px; }
   .auth-shell:not(.register-shell) .form-field { margin-bottom: 20px; }
   .auth-shell:not(.register-shell) .form-field label { margin-bottom: 10px; }
 }
 
 /* Registro: coincide con el frame de registro de Figma sin alterar el login protegido. */
 @media (min-width: 1101px) and (min-height: 800px) {
-  .register-shell .main-content { padding: 16px 5% 24px; overflow: hidden; }
-  .register-shell .auth-layout { height: 760px; }
-  .register-shell .auth-register .auth-card { height: 760px; padding: 40px 52px 24px 50px; }
+  .register-shell .main-content { padding: 16px 5% 24px; overflow: visible; }
+  .register-shell .auth-layout { min-height: min(760px, calc(100dvh - 120px)); height: auto; }
+  .register-shell .auth-register .auth-card { height: auto; min-height: min(760px, calc(100dvh - 120px)); padding: 40px 52px 24px 50px; }
   .register-shell .auth-register .auth-card form { margin-top: 24px; }
   .register-shell .auth-register .form-field { margin-bottom: 11px; }
   .register-shell .auth-register label { margin-bottom: 6px; }
@@ -366,6 +366,15 @@ button:not(:disabled), .button { cursor: pointer; }
   .register-shell .auth-intro { padding-top: 95px; }
   .register-shell .auth-intro .study-illustration { margin-top: 24px; }
   .register-shell .auth-register .study-illustration { height: 420px; padding: 58px 50px; }
+}
+
+/* Authentication cards grow with validation messages instead of clipping actions. */
+.auth-shell .auth-card { height: auto; overflow: visible; }
+
+@media (max-width: 1100px) {
+  .auth-shell .main-content { overflow: visible; }
+  .auth-shell .auth-card,
+  .register-shell .auth-register .auth-card { height: auto; min-height: 0; }
 }
 
 button:disabled { cursor: not-allowed; opacity: .6; }

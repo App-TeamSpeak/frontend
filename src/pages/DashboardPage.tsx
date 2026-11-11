@@ -111,12 +111,12 @@ function RoomManagementDialog({ dialog, onClose, onCreate, onSave, onDelete, onJ
           {!isCreate && room && <><div className="form-field room-management-dialog-id-field"><label htmlFor="edit-room-id">ID de la sala</label><input className="room-management-dialog-readonly" id="edit-room-id" value={`${room.id}  ·  No editable`} readOnly aria-readonly="true" /></div><p className="room-management-dialog-helper">El ID se mantiene igual aunque cambies el nombre.</p></>}
           {isJoin && <p className="room-management-dialog-helper room-management-dialog-join-helper">No necesitas correo, nombre ni contraseña para unirte desde aquí.</p>}
           {isCreate && <fieldset className="room-privacy-group"><legend>Privacidad</legend><div className="room-privacy-options">
-            <label className={`room-privacy-option${privacy === 'private' ? ' room-privacy-option-selected' : ''}`}>
-              <input className="room-privacy-radio" type="radio" name="privacy" value="private" checked={privacy === 'private'} onChange={() => setPrivacy('private')} />
+            <label className={`room-privacy-option${privacy === 'private' ? ' room-privacy-option-selected' : ''}`} htmlFor="room-privacy-private" aria-label="Privada">
+              <input className="room-privacy-radio" id="room-privacy-private" type="radio" name="privacy" value="private" checked={privacy === 'private'} onChange={() => setPrivacy('private')} />
               <span className="room-privacy-copy"><span className="room-privacy-label">Privada</span><span className="room-privacy-description">Solo quienes tengan el ID pueden unirse.</span></span>
             </label>
-            <label className={`room-privacy-option${privacy === 'public' ? ' room-privacy-option-selected' : ''}`}>
-              <input className="room-privacy-radio" type="radio" name="privacy" value="public" checked={privacy === 'public'} onChange={() => setPrivacy('public')} />
+            <label className={`room-privacy-option${privacy === 'public' ? ' room-privacy-option-selected' : ''}`} htmlFor="room-privacy-public" aria-label="Pública">
+              <input className="room-privacy-radio" id="room-privacy-public" type="radio" name="privacy" value="public" checked={privacy === 'public'} onChange={() => setPrivacy('public')} />
               <span className="room-privacy-copy"><span className="room-privacy-label">Pública</span><span className="room-privacy-description">Cualquier persona con el enlace puede unirse.</span></span>
             </label>
           </div></fieldset>}

@@ -58,7 +58,7 @@ export function PictureInPictureStrip({ participants }: { participants: Particip
   const visibleParticipants = participants.slice(0, maxVisibleParticipants);
   const remainingParticipants = Math.max(0, participants.length - maxVisibleParticipants);
 
-  return <div className="shared-screen-participants" role="region" aria-label="Participantes de la presentación" tabIndex={participants.length > maxVisibleParticipants ? 0 : undefined}>
+  return <div className="shared-screen-participants" role="region" aria-label="Participantes de la presentación">
     {visibleParticipants.map((participant, index) => <ParticipantThumbnail key={participant.name} participant={participant} index={index} />)}
     {remainingParticipants > 0 && <div className="shared-screen-more" aria-label={`${remainingParticipants} participantes adicionales`}>+{remainingParticipants}</div>}
   </div>;
