@@ -41,6 +41,10 @@ describe('RoomPage', () => {
     await screen.findByRole('heading', { name: 'Participantes' });
     expect(screen.getByRole('button', { name: 'Micrófono silenciado' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Cámara apagada' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Micrófono silenciado' }));
+    expect(mocks.socket.emit).toHaveBeenCalledWith('media:state', { microphone: true, camera: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Cámara apagada' }));
+    expect(mocks.socket.emit).toHaveBeenCalledWith('media:state', { microphone: true, camera: true });
     const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([name, callback]) => [name, callback]));
     listeners['connect']();
     listeners['room:joined']({ participants: ['u1', 'u2'] });
