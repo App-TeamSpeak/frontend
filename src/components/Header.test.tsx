@@ -1,11 +1,12 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router-dom';
 import { Header } from './Header';
 import { AuthProvider } from '../auth/AuthContext';
 
 afterEach(cleanup);
 const LocationProbe = () => <output data-testid="location">{useLocation().pathname}</output>;
+const NavigationTypeProbe = () => <output data-testid="navigation-type">{useNavigationType()}</output>;
 
 describe('Header', () => {
   it('renders the dashboard menu with rooms and profile without a fake avatar', () => {
@@ -26,17 +27,16 @@ describe('Header', () => {
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
 
-  it('confirms, loads and completes logout', () => {
-    vi.useFakeTimers();
+  it('confirms and completes logout immediately at the login route', () => {
     window.localStorage.setItem('teamspeak.session', JSON.stringify({ id: 'ready', name: 'Ana Martínez', email: 'ana@test.edu', username: 'ana.martinez' }));
-    render(<MemoryRouter initialEntries={['/dashboard']}><AuthProvider><Header /><LocationProbe /></AuthProvider></MemoryRouter>);
+    render(<MemoryRouter initialEntries={['/dashboard']}><AuthProvider><Header /><LocationProbe /><NavigationTypeProbe /></AuthProvider></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
     expect(screen.getByRole('dialog', { name: '¿Cerrar sesión?' })).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cerrar sesión' }));
-    expect(screen.getByRole('button', { name: 'Cerrando sesión…' })).toBeDisabled();
-    act(() => vi.advanceTimersByTime(700));
-    expect(screen.getByTestId('location')).toHaveTextContent('/sesion-cerrada');
+    expect(screen.getByTestId('location')).toHaveTextContent('/login');
+    expect(screen.getByTestId('navigation-type')).toHaveTextContent('REPLACE');
     expect(window.localStorage.getItem('teamspeak.session')).toBeNull();
-    vi.useRealTimers();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
 });
