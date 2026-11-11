@@ -9,3 +9,5 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+docs/*.docx
+docs/*.xlsx
