@@ -57,6 +57,26 @@ describe('Authentication system states', () => {
     expect(screen.getByLabelText('Usuario o correo electrónico').closest('form')).toHaveAttribute('aria-busy', 'true');
   });
 
+  it('keeps the invalid-credentials message before the recovery link', async () => {
+    vi.useFakeTimers();
+    renderAuth();
+
+    fireEvent.change(screen.getByLabelText('Usuario o correo electrónico'), { target: { value: 'ana@ejemplo.edu' } });
+    fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'incorrecta' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
+
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+    });
+
+    const error = screen.getByRole('alert');
+    const recovery = screen.getByText('¿Olvidaste tu contraseña?');
+    expect(error).toHaveTextContent('Verifica tu usuario y contraseña e inténtalo de nuevo.');
+    expect(error.nextElementSibling).toBe(recovery);
+    expect(recovery).toHaveClass('forgot-link');
+  });
+
   it('supports registration validation and clears the state when a field changes', () => {
     renderAuth(true);
 
