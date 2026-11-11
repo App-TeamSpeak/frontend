@@ -4,7 +4,8 @@ export type Sprint0Document = Record<string, unknown>;
 export type ApiErrorPayload = { success: false; code: string; message: string; details?: unknown };
 export class ApiError extends Error { readonly code: string; readonly status: number; readonly details?: unknown; constructor(status: number, payload: ApiErrorPayload) { super(payload.message); this.name = 'ApiError'; this.status = status; this.code = payload.code; this.details = payload.details; } }
 export type Sprint0ApiError = ApiErrorPayload;
-const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://localhost:10000').replace(/\/+$/, '');
+function trimTrailingSlashes(value: string) { let end = value.length; while (end > 0 && value[end - 1] === '/') end -= 1; return value.slice(0, end); }
+const apiUrl = trimTrailingSlashes(import.meta.env.VITE_API_URL ?? 'http://localhost:10000');
 const invalidResponse: ApiErrorPayload = { success: false, code: 'INVALID_RESPONSE', message: 'La API devolvió una respuesta no válida. Reintenta en unos momentos.' };
 
 export type UserProfile = { uid: string; email: string; nombre: string; apellido: string; username: string; usernameKey: string; avatarUrl: string | null; profileStatus: 'complete'; createdAt: string; updatedAt: string };
