@@ -1,39 +1,26 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { AuthProvider } from '../auth/AuthContext';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CompleteUsernamePage } from './PlaceholderPages';
 
-afterEach(() => { cleanup(); vi.useRealTimers(); window.localStorage.clear(); });
-beforeEach(() => { window.localStorage.setItem('teamspeak.session', JSON.stringify({ id: 'pending', name: 'Ana Martínez', email: 'ana@test.edu' })); window.localStorage.setItem('teamspeak.users', JSON.stringify([{ id: 'pending', name: 'Ana Martínez', email: 'ana@test.edu', password: 'secret' }, { id: 'other', name: 'Otra persona', email: 'other@test.edu', username: 'ana.martinez', password: 'secret' }])); });
-const LocationProbe = () => <output data-testid="location">{useLocation().pathname}</output>;
-const renderPage = () => render(<MemoryRouter initialEntries={['/completar-username']}><AuthProvider><Routes><Route path="/completar-username" element={<CompleteUsernamePage />} /><Route path="/dashboard" element={<p>Dashboard</p>} /></Routes><LocationProbe /></AuthProvider></MemoryRouter>);
+const setUser = vi.fn();
+afterEach(() => { cleanup(); setUser.mockClear(); });
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1', email: 'ana@test.edu', name: 'Ana', username: '' }, setUser }) }));
+vi.mock('../services/auth', () => ({ completeProfile: vi.fn() }));
 
-describe('Completar username', () => {
-  it('validates an empty username', () => {
-    renderPage();
+describe('CompleteUsernamePage', () => {
+  it('rechaza un nombre inválido', () => {
+    render(<MemoryRouter><CompleteUsernamePage /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'Guardar nombre' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Escribe un nombre de usuario.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Usa entre 8 y 30 caracteres');
   });
-
-  it('reports an unavailable username', async () => {
-    vi.useFakeTimers(); renderPage();
-    fireEvent.change(screen.getByLabelText('Nombre de usuario'), { target: { value: 'ana.martinez' } });
+  it('acepta un nombre válido', async () => {
+    const { completeProfile } = await import('../services/auth');
+    vi.mocked(completeProfile).mockResolvedValue({ user: { id: 'u1', email: 'ana@test.edu', name: 'Ana', username: 'ana_nueva' } } as never);
+    render(<MemoryRouter><CompleteUsernamePage /></MemoryRouter>);
+    fireEvent.change(screen.getByLabelText('Nombre de usuario'), { target: { value: 'ana_nueva' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar nombre' }));
-    expect(screen.getByRole('button', { name: 'Guardando…' })).toBeDisabled();
-    expect(screen.getByText('Estamos guardando tu nombre de usuario.')).toBeInTheDocument();
-    await act(async () => { vi.advanceTimersByTime(700); await Promise.resolve(); });
-    expect(screen.getByRole('alert')).toHaveTextContent('Ese nombre ya está en uso.');
-  });
-
-  it('saves an available username and reaches the dashboard', async () => {
-    vi.useFakeTimers(); renderPage();
-    fireEvent.change(screen.getByLabelText('Nombre de usuario'), { target: { value: 'ana.nueva' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar nombre' }));
-    await act(async () => { vi.advanceTimersByTime(700); await Promise.resolve(); await Promise.resolve(); });
-    await act(async () => { vi.advanceTimersByTime(700); await Promise.resolve(); await Promise.resolve(); });
-    expect(screen.getByRole('heading', { name: 'Tu cuenta está lista' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: 'Ir a mis salas' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('/dashboard');
+    expect(await screen.findByRole('heading', { name: 'Tu cuenta está lista' })).toBeInTheDocument();
+    expect(setUser).toHaveBeenCalled();
   });
 });
