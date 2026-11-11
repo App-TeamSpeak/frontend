@@ -2,7 +2,12 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 
-vi.mock('./services/auth', () => ({ configureAuth: vi.fn().mockResolvedValue(undefined), subscribeToAuth: vi.fn(() => () => undefined), logoutUser: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('./services/auth', () => ({
+  configureAuth: vi.fn().mockResolvedValue(undefined),
+  subscribeToAuth: vi.fn(() => () => undefined),
+  logoutUser: vi.fn().mockResolvedValue(undefined),
+}));
+
 
 describe('App', () => {
   it('redirige la ruta pública inicial al login', async () => {

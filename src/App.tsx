@@ -1,5 +1,4 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import type { ReactNode } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { MainLayout } from './layouts/MainLayout';
 import { AccessibilityPage, CompleteUsernamePage, EmailVerificationPage, HelpPage, LoggedOutPage, NotFoundPage, ProfilePage, RecoveryPage } from './pages/PlaceholderPages';
@@ -7,16 +6,7 @@ import { LoginPage, RegisterPage } from './pages/AuthPages';
 import { DashboardPage } from './pages/DashboardPage';
 import { RoomPage } from './pages/RoomPage';
 import { RoomEntryPage } from './pages/RoomEntryPage';
-
-function ProtectedRoute({ children, allowIncomplete = false, allowUnverified = false }: { children: ReactNode; allowIncomplete?: boolean; allowUnverified?: boolean }) {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="page-panel" role="status">Cargando sesión…</div>;
-  if (!user) return <Navigate replace to="/login" />;
-  if (!allowUnverified && !user.emailVerified) return <Navigate replace to="/verificar-correo" />;
-  if (!allowIncomplete && !user.username) return <Navigate replace to="/completar-username" />;
-  if (allowIncomplete && user.username) return <Navigate replace to="/dashboard" />;
-  return children;
-}
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 export default function App() {
   return <BrowserRouter><AuthProvider><Routes><Route element={<MainLayout />}>
