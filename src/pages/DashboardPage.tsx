@@ -192,10 +192,10 @@ export function DashboardPage() {
       document.removeEventListener('pointerdown', handlePointerDown);
     };
   }, [managementDialog, openMenu]);
-  const loadRooms = async () => { setStatus('loading'); try { const data = await api.listRooms(); setRoomList(data.map(toPreview)); setStatus(data.length ? 'success' : 'empty'); } catch { setStatus('error'); } };
+  const loadRooms = async () => { setStatus('loading'); try { const data = await api.listRooms(); setRoomList(data.map((room, index) => toPreview(room, index))); setStatus(data.length ? 'success' : 'empty'); } catch { setStatus('error'); } };
   useEffect(() => { if (shouldSimulateError) { setStatus('error'); return; } if (shouldSimulateEmpty) { setStatus('empty'); return; } void loadRooms(); }, [shouldSimulateEmpty, shouldSimulateError]);
   const handleRetry = () => { void loadRooms(); };
-  const handleSaveRoom = async (name: string) => { if (!managementDialog || managementDialog.kind !== 'edit') return; try { const updated = await api.updateRoom(managementDialog.room.id, { name }); setRoomList(current => current.map(room => room.id === updated.id ? { ...room, ...toPreview(updated, current.indexOf(room)) } : room)); setManagementDialog(null); } catch (error) { setStatus(error instanceof ApiError ? 'error' : 'error'); } };
+  const handleSaveRoom = async (name: string) => { if (!managementDialog || managementDialog.kind !== 'edit') return; try { const updated = await api.updateRoom(managementDialog.room.id, { name }); setRoomList(current => current.map(room => room.id === updated.id ? { ...room, ...toPreview(updated, current.indexOf(room)) } : room)); setManagementDialog(null); } catch { setStatus('error'); } };
   const handleCreateRoom = async (name: string, _privacy: string) => { try { const created = await api.createRoom({ name }); setRoomList(current => [...current, toPreview(created, current.length)]); setStatus('success'); setManagementDialog(null); } catch { setStatus('error'); } };
   const navigate = useNavigate();
   const handleJoinRoom = async (id: string) => { try { await api.joinRoom(id); setManagementDialog(null); navigate(`/salas/${encodeURIComponent(id)}`); } catch { setStatus('error'); } };
