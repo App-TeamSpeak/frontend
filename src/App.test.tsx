@@ -1,12 +1,21 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
-vi.mock('./services/auth', () => ({
+const authMocks = vi.hoisted(() => ({
   configureAuth: vi.fn().mockResolvedValue(undefined),
-  subscribeToAuth: vi.fn(() => () => undefined),
+  subscribeToAuth: vi.fn(),
   logoutUser: vi.fn().mockResolvedValue(undefined),
 }));
+
+vi.mock('./services/auth', () => authMocks);
+
+beforeEach(() => {
+  authMocks.subscribeToAuth.mockImplementation((callback: (user: null) => void) => {
+    queueMicrotask(() => callback(null));
+    return () => undefined;
+  });
+});
 
 
 describe('App', () => {
