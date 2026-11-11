@@ -62,6 +62,22 @@ button:not(:disabled), .button { cursor: pointer; }
 .site-footer a { display: inline-flex; align-items: center; min-height: 44px; }
 .page-panel { max-width: 1136px; margin: auto; padding: 32px; border: 1px solid var(--border); border-radius: 24px; background: var(--surface); }
 .page-body { margin-top: 24px; }
+.help-page { padding: 36px 32px 40px; }
+.help-intro > h1 { margin-top: 0; }
+.help-intro > p:last-child { max-width: 680px; margin-top: 12px; color: var(--muted); font-size: 18px; line-height: 28px; }
+.help-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; padding: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--canvas); }
+.help-navigation a { display: inline-flex; min-height: 40px; align-items: center; padding: 8px 14px; border-radius: 8px; color: var(--muted); font: 600 13px/1.2 'Inter Variable', sans-serif; text-decoration: none; }
+.help-navigation a:hover, .help-navigation a:focus-visible { background: var(--subtle); color: var(--text); }
+.help-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+.help-section { padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: rgb(15 23 42 / 42%); }
+.help-section h2 { font-size: 18px; line-height: 24px; }
+.help-section p { margin-top: 10px; color: var(--muted); font-size: 14px; line-height: 21px; }
+.help-section ul, .help-section ol { display: grid; gap: 10px; margin-top: 16px; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 21px; }
+.help-section li::marker { color: var(--link); font-weight: 600; }
+.help-section strong { color: var(--text); font-weight: 600; }
+.help-section em { color: var(--link-strong); font-style: normal; }
+.help-section a, .help-links a { color: var(--link); font-weight: 600; }
+.help-links { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; font-size: 14px; }
 .eyebrow { margin-bottom: 12px; text-transform: uppercase; letter-spacing: .16em; color: var(--link); font-size: 13px; font-weight: 600; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 48px; padding: 12px 20px; border: 1px solid var(--border-strong); border-radius: 10px; font-weight: 600; font-size: 14px; }
 .primary { background: var(--primary); border-color: var(--link); color: var(--text); }
@@ -99,6 +115,24 @@ button:not(:disabled), .button { cursor: pointer; }
 .form-field { margin-bottom: 22px; }
 .form-field label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 16px; }
 .form-field input, .form-field select { width: 100%; height: 52px; padding: 12px 16px; color: var(--text); border: 1px solid var(--input-border); border-radius: 9px; background: var(--surface); }
+.password-field { position: relative; }
+.password-field input { padding-right: 52px; }
+.password-toggle { position: absolute; top: 50%; right: 8px; display: grid; width: 36px; height: 36px; place-items: center; padding: 0; transform: translateY(-50%); border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
+.password-toggle:hover { background: var(--subtle); color: var(--text); }
+.password-toggle svg { width: 19px; height: 19px; }
+.password-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.password-label-row label { margin-bottom: 16px; }
+.password-help-trigger { min-height: 28px; padding: 2px 0; border: 0; background: transparent; color: var(--link); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.password-help-trigger:hover { color: var(--link-strong); }
+.password-help-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: var(--overlay); }
+.password-help-dialog { position: relative; width: min(390px, 100%); padding: 28px; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); box-shadow: 0 24px 60px rgb(2 6 23 / 40%); }
+.password-help-dialog h2 { padding-right: 24px; font-size: 21px; line-height: 28px; }
+.password-help-dialog > p { margin-top: 10px; color: var(--muted); font-size: 14px; line-height: 20px; }
+.password-help-dialog ul { display: grid; gap: 8px; margin-top: 18px; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 20px; }
+.password-help-dialog li::marker { color: var(--link); }
+.password-help-close { position: absolute; top: 12px; right: 14px; display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 25px; line-height: 1; }
+.password-help-close:hover { background: var(--subtle); color: var(--text); }
+.password-help-action { width: 100%; min-height: 44px; margin-top: 24px; }
 .form-field input::placeholder { color: var(--muted); opacity: 1; }
 .form-field input[aria-invalid=true] { border-color: var(--error); }
 .field-error { color: var(--error); font-size: 14px; margin-top: 4px; }
@@ -143,16 +177,16 @@ button:not(:disabled), .button { cursor: pointer; }
 .auth-showcase-card p { margin-top: 7px; color: #cbd5e1; font-size: 12px; }
 .auth-showcase-initial { margin-top: 12px; color: #cbd5e1; font-size: 12px; }
 .auth-showcase-initial strong { font-weight: 600; }
-.dashboard-shell .header-inner { max-width: none; padding-inline: 64px; }
-.dashboard-shell .site-header nav a { min-height: 32px; text-decoration: none; }
-.dashboard-shell .site-header nav a[aria-current=page] { color: #1d4ed8; text-decoration: none; }
+.dashboard-shell .header-inner, .panel-shell .header-inner { max-width: none; padding-inline: 64px; }
+.dashboard-shell .site-header nav a, .panel-shell .site-header nav a { min-height: 32px; text-decoration: none; }
+.dashboard-shell .site-header nav a[aria-current=page], .panel-shell .site-header nav a[aria-current=page] { color: #1d4ed8; text-decoration: none; }
 .header-profile-actions { position: relative; width: 40px; height: 40px; flex: 0 0 40px; }
 .profile-avatar { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 50%; background: #dce8ff; color: #1d4ed8; font: 600 14px/1 'Inter Variable', sans-serif; text-decoration: none; }
 .profile-avatar:hover { background: #c9dcff; }
 .header-logout-icon { position: absolute; top: 0; left: 56px; display: grid; width: 40px; height: 40px; place-items: center; padding: 0; overflow: visible; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--muted); }
 .header-logout-icon svg { display: block; width: 20px; height: 20px; overflow: visible; }
 .header-logout-icon:hover { border-color: var(--link); color: var(--link); background: var(--subtle); }
-.dashboard-shell .main-content { padding: 32px 5% 24px; }
+.dashboard-shell .main-content, .panel-shell .main-content { padding: 32px 5% 24px; }
 .dashboard { max-width: 1136px; margin: auto; padding-inline: 32px; }
 .dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .dashboard-heading p { color: var(--muted); margin-top: 6px; }
@@ -281,6 +315,13 @@ button:not(:disabled), .button { cursor: pointer; }
 .room-management-dialog-delete .room-management-dialog-actions .button { min-height: 44px; height: 44px; padding: 12px 16px; border-radius: 8px; }
 .room-management-dialog-delete .room-management-dialog-actions .secondary { width: 120px; border: 2px solid var(--link); color: var(--text); }
 .room-management-dialog-delete .room-management-dialog-danger { width: 148px; min-height: 44px; border-color: var(--error-strong); background: var(--danger-action); }
+.profile-delete-dialog { width: min(360px, calc(100vw - 32px)); min-height: 0; padding: 24px; border-radius: 16px; }
+.profile-delete-dialog h2 { font-size: 22px; line-height: 28px; }
+.profile-delete-dialog > p { margin-top: 10px; font-size: 14px; line-height: 20px; }
+.profile-delete-dialog .room-management-dialog-actions { margin-top: 24px; gap: 10px; }
+.profile-delete-dialog .room-management-dialog-actions .button { min-height: 42px; height: 42px; padding: 10px 14px; }
+.profile-delete-dialog .room-management-dialog-actions .secondary { width: 102px; }
+.profile-delete-dialog .room-management-dialog-danger { width: 146px; }
 .room-management-dialog-edit { width: min(500px, 100%); min-height: 430px; padding: 28px 32px 20px; border-radius: 20px; }
 .room-management-dialog-edit h2 { font-size: 26px; line-height: 32px; }
 .room-management-dialog-description { margin-top: 12px; color: var(--muted); font-size: 15px; line-height: 21px; }
@@ -326,7 +367,9 @@ button:not(:disabled), .button { cursor: pointer; }
 .entry-form .button { margin-right: 12px; margin-bottom: 16px; }
 @media (max-width: 1100px) { .auth-layout { grid-template-columns: 1fr 1.1fr; gap: 32px; } .auth-intro h2 { font-size: 36px; } .study-illustration { height: auto; padding: 32px 20px; } .study-card { padding: 20px; height: auto; } .study-note { padding: 12px; } .auth-card { padding: 32px; } .dashboard-heading { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 900px) { .auth-showcase-grid { grid-template-columns: 1fr; } .auth-showcase-section { margin-top: 32px; } }
-@media (max-width: 767px) { .header-inner { flex-wrap: wrap; gap: 8px; padding: 16px 24px; } .site-header ul { gap: 8px 20px; } .main-content { padding: 24px 20px 36px; } .dashboard-shell .header-inner { padding-inline: 24px; } .dashboard-shell .main-content { padding: 24px 20px 36px; } .dashboard { padding-inline: 0; } .dashboard > .private-note { margin-top: 20px; } .auth-layout { display: flex; flex-direction: column; gap: 28px; } .auth-intro { padding-top: 8px; } .auth-intro h2 { font-size: 32px; } .auth-intro > p { font-size: 16px; margin-top: 12px; } .study-illustration, .auth-intro > .private-note { display: none; } .auth-card { padding: 28px 24px; min-height: 0; } .auth-card h1 { font-size: 26px; } .auth-switch a { display: inline-block; margin: 12px 8px 0; } .page-panel { padding: 24px; } .page-panel h1 { font-size: 28px; } .empty-room { margin: 40px auto; } .rooms-grid { grid-template-columns: 1fr; } .room-card-heading h3 { font-size: 18px; } .room-load-error { min-height: 340px; margin: 32px auto 20px; padding: 48px 20px 24px; } .room-load-error-title { font-size: 22px; line-height: 28px; } .room-load-error-description { font-size: 14px; } .room-load-error-retry { width: min(100%, 280px); margin-top: 28px; } .room-empty-state { min-height: 350px; margin: 32px auto 20px; padding: 32px 20px 24px; } .room-empty-state-description { max-width: 100%; font-size: 14px; line-height: 20px; } .room-empty-state-action { width: 100%; min-height: 48px; margin-top: 32px; } .room-management-dialog-backdrop { padding: 16px; } .room-management-dialog { padding: 24px 20px; } .room-management-dialog-edit { min-height: 0; padding: 24px 20px; } .room-management-dialog-edit .room-management-dialog-actions { flex-direction: column-reverse; } .room-management-dialog-edit .room-management-dialog-actions .button { width: 100%; } .auth-shell { height: auto; min-height: 100vh; overflow: visible; } .auth-shell .main-content { display: block; overflow: visible; } .auth-shell .auth-card { height: auto; } }
+@media (max-width: 767px) { .header-inner { flex-wrap: wrap; gap: 8px; padding: 16px 24px; } .site-header ul { gap: 8px 20px; } .main-content { padding: 24px 20px 36px; } .dashboard-shell .header-inner, .panel-shell .header-inner { padding-inline: 24px; } .dashboard-shell .main-content, .panel-shell .main-content { padding: 24px 20px 36px; } .dashboard { padding-inline: 0; } .dashboard > .private-note { margin-top: 20px; } .auth-layout { display: flex; flex-direction: column; gap: 28px; } .auth-intro { padding-top: 8px; } .auth-intro h2 { font-size: 32px; } .auth-intro > p { font-size: 16px; margin-top: 12px; } .study-illustration, .auth-intro > .private-note { display: none; } .auth-card { padding: 28px 24px; min-height: 0; } .auth-card h1 { font-size: 26px; } .auth-switch a { display: inline-block; margin: 12px 8px 0; } .page-panel { padding: 24px; } .page-panel h1 { font-size: 28px; } .empty-room { margin: 40px auto; } .rooms-grid { grid-template-columns: 1fr; } .room-card-heading h3 { font-size: 18px; } .room-load-error { min-height: 340px; margin: 32px auto 20px; padding: 48px 20px 24px; } .room-load-error-title { font-size: 22px; line-height: 28px; } .room-load-error-description { font-size: 14px; } .room-load-error-retry { width: min(100%, 280px); margin-top: 28px; } .room-empty-state { min-height: 350px; margin: 32px auto 20px; padding: 32px 20px 24px; } .room-empty-state-description { max-width: 100%; font-size: 14px; line-height: 20px; } .room-empty-state-action { width: 100%; min-height: 48px; margin-top: 32px; } .room-management-dialog-backdrop { padding: 16px; } .room-management-dialog { padding: 24px 20px; } .room-management-dialog-edit { min-height: 0; padding: 24px 20px; } .room-management-dialog-edit .room-management-dialog-actions { flex-direction: column-reverse; } .room-management-dialog-edit .room-management-dialog-actions .button { width: 100%; } .auth-shell { height: auto; min-height: 100vh; overflow: visible; } .auth-shell .main-content { display: block; overflow: visible; } .auth-shell .auth-card { height: auto; } }
+@media (max-width: 767px) { .dashboard-shell .header-inner, .panel-shell .header-inner { align-items: center; gap: 10px 12px; padding-inline: 16px; } .dashboard-shell .brand, .panel-shell .brand { min-width: 0; gap: 10px; font-size: 16px; } .dashboard-shell .brand span, .panel-shell .brand span { width: 32px; height: 32px; flex: 0 0 32px; } .dashboard-shell .site-header nav, .panel-shell .site-header nav { order: 3; width: 100%; flex: 1 0 100%; } .dashboard-shell .site-header nav ul, .panel-shell .site-header nav ul { justify-content: center; gap: 8px 28px; } .header-profile-actions { display: flex; width: auto; height: 40px; align-items: center; gap: 8px; flex: 0 0 auto; } .header-logout-icon { position: static; flex: 0 0 40px; } }
+@media (max-width: 767px) { .help-page { padding: 24px 20px 28px; } .help-intro > p:last-child { font-size: 16px; line-height: 24px; } .help-navigation { display: grid; grid-template-columns: 1fr 1fr; } .help-navigation a { justify-content: center; padding-inline: 8px; text-align: center; } .help-grid { grid-template-columns: 1fr; gap: 12px; } .help-section { padding: 20px; } }
 @media (max-width: 767px) { .room-management-dialog-edit-error { min-height: 0; } .room-management-dialog-field-error { overflow-wrap: anywhere; } }
 @media (max-width: 767px) { .room-management-dialog-create { min-height: 0; padding: 24px 20px; } .room-management-dialog-create .room-management-dialog-actions { flex-direction: column-reverse; } .room-management-dialog-create .room-management-dialog-actions .button { width: 100%; } .room-privacy-option { align-items: flex-start; padding: 12px; } }
 @media (max-width: 767px) { .room-management-dialog-create-error { min-height: 0; } .room-management-dialog-create .room-management-dialog-field-error { overflow-wrap: anywhere; } }
@@ -393,6 +436,18 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .room-app-shell { background: #0b1120; }
 .room-app-shell > .site-header { display: none; }
 .room-app-shell > .main-content { max-width: none; padding: 0; }
+.room-loading-screen { display: grid; min-height: calc(100vh - 72px); min-height: calc(100dvh - 72px); place-items: center; padding: 32px 24px; background: radial-gradient(circle at 50% 20%, rgb(30 41 59 / 35%), transparent 42%), var(--canvas); }
+.room-loading-card { width: min(440px, 100%); padding: 36px 36px 32px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: 0 20px 50px rgb(2 6 23 / 24%); text-align: center; }
+.room-loading-mark { display: grid; width: 48px; height: 48px; place-items: center; margin: 0 auto 20px; border-radius: 14px; background: var(--primary); color: var(--text); font: 600 22px/1 'Inter Variable', sans-serif; }
+.room-loading-eyebrow { color: var(--link); font: 600 11px/1.2 'Inter Variable', sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+.room-loading-card h1 { margin-top: 12px; font-size: 26px; line-height: 1.2; }
+.room-loading-description { margin: 10px auto 0; max-width: 320px; color: var(--muted); font-size: 15px; line-height: 22px; }
+.room-loading-progress { position: relative; width: 100%; height: 6px; margin-top: 28px; overflow: hidden; border-radius: 999px; background: var(--subtle); }
+.room-loading-progress span { display: block; width: 38%; height: 100%; border-radius: inherit; background: var(--link); animation: room-loading-progress 1.4s ease-in-out infinite; }
+.room-loading-status { margin-top: 12px; color: var(--muted); font-size: 13px; }
+.room-loading-back { width: 100%; min-height: 44px; margin-top: 24px; }
+@keyframes room-loading-progress { 0% { transform: translateX(-120%); } 50%, 100% { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) { .room-loading-progress span { animation: none; width: 100%; } }
 .room-shell { min-height: calc(100vh - 72px); min-height: calc(100dvh - 72px); color: var(--text); }
 .room-header { display: flex; min-height: 72px; align-items: center; gap: 24px; padding: 0 34px 0 28px; background: var(--surface); }
 .room-header-brand { display: flex; min-width: 0; align-items: center; gap: 18px; }
