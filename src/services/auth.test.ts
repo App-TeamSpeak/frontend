@@ -34,7 +34,7 @@ vi.mock('firebase/auth', () => ({
   updateProfile: mocks.updateProfile,
 }));
 vi.mock('../firebase', () => ({ firebaseAuth: mocks.auth, assertFirebaseConfiguration: mocks.assertFirebaseConfiguration }));
-vi.mock('./api', () => ({ api: mocks.api, ApiError: class ApiError extends Error { status = 500; code = 'API_ERROR'; } }));
+vi.mock('./api', () => ({ api: mocks.api, ApiError: class ApiError extends Error { status: number; code = 'API_ERROR'; constructor(status = 500, message = 'API error') { super(message); this.status = status; } } }));
 
 import {
   completeProfile,
@@ -52,6 +52,7 @@ import {
   subscribeToAuth,
   updateUserProfile,
 } from './auth';
+import { ApiError } from './api';
 
 const firebaseUser = (overrides: Record<string, unknown> = {}) => ({
   uid: 'u1',
@@ -137,6 +138,36 @@ describe('auth service', () => {
 
     expect(mocks.api.getProfile).toHaveBeenCalledTimes(1);
     expect(callback).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches an absent profile and falls back to Firebase data on unexpected errors', async () => {
+    const user = firebaseUser();
+    mocks.signInWithEmailAndPassword.mockResolvedValue({ user });
+    mocks.api.getProfile.mockRejectedValueOnce(new ApiError(404, { success: false, code: 'NOT_FOUND', message: 'profile missing' }));
+    await expect(loginUser({ email: 'ana@test.edu', password: 'secret1' })).resolves.toMatchObject({ user: { id: 'u1' } });
+
+    const callback = vi.fn();
+    subscribeToAuth(callback);
+    const listener = mocks.onIdTokenChanged.mock.calls[0][1];
+    await listener(user);
+    expect(mocks.api.getProfile).toHaveBeenCalledTimes(1);
+
+    clearAuthProfileCache();
+    mocks.api.getProfile.mockRejectedValueOnce(new Error('network'));
+    await listener(user);
+    expect(callback).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'u1', name: 'Ana' }));
+  });
+
+  it('clears the cached profile when logging out', async () => {
+    const user = firebaseUser();
+    mocks.api.getProfile.mockResolvedValue({ profile });
+    const callback = vi.fn();
+    subscribeToAuth(callback);
+    const listener = mocks.onIdTokenChanged.mock.calls[0][1];
+    await listener(user);
+    await logoutUser();
+    await listener(user);
+    expect(mocks.api.getProfile).toHaveBeenCalledTimes(2);
   });
 
   it('completes and updates profiles, then removes pending data', async () => {
