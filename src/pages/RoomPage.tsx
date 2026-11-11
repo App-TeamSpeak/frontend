@@ -151,7 +151,7 @@ export function RoomPage() {
 
   return <section className="room-shell">
     <header className={`room-header${roomView === 'screen-share' ? ' room-header-screen-share' : ''}`}>
-      <div className="room-header-brand"><span aria-hidden="true">S</span><div><h1>{roomName}</h1><p>Sala privada · ID {roomId}</p></div></div>
+      <div className="room-header-brand"><span aria-hidden="true">T</span><div><h1>{roomName}</h1><p>Sala privada · ID {roomId}</p></div></div>
       <div className="room-header-status"><span className={roomView === 'screen-share' ? 'room-share-badge' : 'room-live-badge'}>{roomView === 'screen-share' ? (screenShareOwner === 'self' ? 'Estás compartiendo' : 'Pantalla compartida') : 'EN VIVO'}</span>{roomView === 'grid' && <span>4 participantes</span>}</div>
       <div className="room-header-actions">
         <div className="room-panel-toggles" aria-label="Paneles de sala">

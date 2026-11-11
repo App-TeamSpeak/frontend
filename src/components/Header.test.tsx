@@ -11,8 +11,8 @@ describe('Header', () => {
   it('renders the dashboard header according to the Figma frame', () => {
     render(<MemoryRouter initialEntries={['/dashboard']}><Header /></MemoryRouter>);
 
-    expect(screen.getByRole('link', { name: 'Salón · Mis salas' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Salón · Mis salas' })).toHaveAttribute('href', '/dashboard');
+    expect(screen.getByRole('link', { name: 'TeamSpeak · Mis salas' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'TeamSpeak · Mis salas' })).toHaveAttribute('href', '/dashboard');
     expect(screen.getByRole('navigation', { name: 'Navegación del panel' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Mis salas' })).toHaveAttribute('href', '/dashboard');
     expect(screen.getByRole('link', { name: 'Perfil' })).toHaveAttribute('href', '/perfil');
@@ -36,7 +36,7 @@ describe('Header', () => {
   it('renders only the brand on the login screen', () => {
     render(<MemoryRouter initialEntries={['/login']}><Header /></MemoryRouter>);
 
-    expect(screen.getByRole('link', { name: 'Salón · Iniciar sesión' })).toHaveAttribute('href', '/login');
+    expect(screen.getByRole('link', { name: 'TeamSpeak · Iniciar sesión' })).toHaveAttribute('href', '/login');
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
 
