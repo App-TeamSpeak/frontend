@@ -7,6 +7,7 @@ const fetchMock = vi.fn();
 
 beforeEach(() => {
   fetchMock.mockReset();
+  window.localStorage.clear();
   vi.stubGlobal('fetch', fetchMock);
   window.history.pushState({}, '', '/');
 });
@@ -18,39 +19,67 @@ const failure = (message = 'El documento no existe.') => ({ ok: false, json: asy
 
 describe('TeamSpeak frontend', () => {
   it.each([
-    ['/', 'Aprende y colabora en TeamSpeak'],
+    ['/', 'Bienvenido de nuevo'],
     ['/registro', 'Crear cuenta'],
     ['/login', 'Bienvenido de nuevo'],
-    ['/completar-username', 'Completar perfil'],
+    ['/completar-username', 'Elige tu nombre de usuario'],
     ['/dashboard', 'Tus salas'],
     ['/perfil', 'Mi perfil'],
     ['/salas/sala-42', 'Sala sala-42'],
     ['/ayuda', 'Ayuda'],
     ['/accesibilidad', 'Accesibilidad'],
-    ['/verificacion', 'Documento de verificación'],
   ])('renders the dedicated screen for %s', async (path, heading) => {
+    if (path === '/completar-username') window.localStorage.setItem('teamspeak.session', JSON.stringify({ id: 'pending', name: 'Ana', email: 'ana@test.edu' }));
+    if (['/dashboard', '/perfil', '/salas/sala-42'].includes(path)) window.localStorage.setItem('teamspeak.session', JSON.stringify({ id: 'ready', name: 'Ana Martínez', email: 'ana@test.edu', username: 'ana.martinez' }));
     window.history.pushState({}, '', path);
     render(<App />);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
   });
 
-  it('navigates from home to a dedicated page', async () => {
+  it('starts at login when the root route is opened', async () => {
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Aprende y colabora en TeamSpeak' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: 'Crear cuenta' }));
+    expect(await screen.findByRole('heading', { name: 'Bienvenido de nuevo' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+  });
 
-    expect(await screen.findByRole('heading', { name: 'Crear cuenta' })).toBeInTheDocument();
-    expect(document.title).toBe('Crear cuenta | TeamSpeak');
+  it('protects private routes and keeps incomplete sessions on username setup', async () => {
+    window.history.pushState({}, '', '/dashboard');
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Bienvenido de nuevo' })).toBeInTheDocument();
+    window.localStorage.setItem('teamspeak.session', JSON.stringify({ id: 'pending', name: 'Ana', email: 'ana@test.edu' }));
+    cleanup();
+    window.history.pushState({}, '', '/dashboard');
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Elige tu nombre de usuario' })).toBeInTheDocument();
+  });
+
+  it.each(['/login', '/registro', '/dashboard', '/salas/sala-42'])('keeps the footer visible on %s', (path) => {
+    if (['/dashboard', '/salas/sala-42'].includes(path)) window.localStorage.setItem('teamspeak.session', JSON.stringify({ id: 'ready', name: 'Ana Martínez', email: 'ana@test.edu', username: 'ana.martinez' }));
+    window.history.pushState({}, '', path);
+    render(<App />);
+
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Accesibilidad' })).toHaveAttribute('href', '/accesibilidad');
+    expect(screen.getByRole('link', { name: 'Ayuda' })).toHaveAttribute('href', '/ayuda');
   });
 
   it('renders dynamic rooms and a custom 404', async () => {
+    window.localStorage.setItem('teamspeak.session', JSON.stringify({ id: 'ready', name: 'Ana Martínez', email: 'ana@test.edu', username: 'ana.martinez' }));
     window.history.pushState({}, '', '/salas/sala-42');
     render(<App />);
     expect(screen.getByRole('heading', { name: 'Sala sala-42' })).toBeInTheDocument();
 
     window.history.pushState({}, '', '/ruta-inexistente-sprint0');
     render(<App />);
+    expect(screen.getByRole('heading', { name: 'Página no encontrada' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Volver al ingreso' })).toHaveAttribute('href', '/login');
+  });
+
+  it.each(['/showcase/auth', '/verificacion', '/recuperar-contrasena'])('does not expose the legacy route %s', (path) => {
+    window.history.pushState({}, '', path);
+    render(<App />);
+
     expect(screen.getByRole('heading', { name: 'Página no encontrada' })).toBeInTheDocument();
   });
 
@@ -86,11 +115,7 @@ describe('TeamSpeak frontend', () => {
   });
 });
 
-describe('Sprint 0 navigation and recovery', () => {
-  it.each([['/salas/crear', 'Crear sala'], ['/salas/unirse', 'Unirse a sala'], ['/recuperar-contrasena', 'Recuperar contraseña']])('resolves %s without treating it as a room ID', (path, heading) => {
-    window.history.pushState({}, '', path); render(<App />);
-    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
-  });
+describe('Navigation cleanup', () => {
   it('shows a fresh document after updating', async () => {
     fetchMock.mockResolvedValueOnce(success({ mensaje: 'primera lectura' })).mockResolvedValueOnce(success({ mensaje: 'segunda lectura' }));
     render(<VerificationPage />);
