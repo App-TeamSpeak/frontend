@@ -34,12 +34,13 @@ vi.mock('firebase/auth', () => ({
   updateProfile: mocks.updateProfile,
 }));
 vi.mock('../firebase', () => ({ firebaseAuth: mocks.auth, assertFirebaseConfiguration: mocks.assertFirebaseConfiguration }));
-vi.mock('./api', () => ({ api: mocks.api, ApiError: class ApiError extends Error { status = 500; code = 'API_ERROR'; } }));
+vi.mock('./api', () => ({ api: mocks.api, ApiError: class ApiError extends Error { status: number; code = 'API_ERROR'; constructor(status = 500, message = 'API error') { super(message); this.status = status; } } }));
 
 import {
   completeProfile,
   configureAuth,
   continueWithGoogle,
+  clearAuthProfileCache,
   currentFirebaseUser,
   deleteUserAccount,
   loginUser,
@@ -51,6 +52,7 @@ import {
   subscribeToAuth,
   updateUserProfile,
 } from './auth';
+import { ApiError } from './api';
 
 const firebaseUser = (overrides: Record<string, unknown> = {}) => ({
   uid: 'u1',
@@ -66,6 +68,7 @@ const profile = { uid: 'u1', email: 'ana@test.edu', nombre: 'Ana', apellido: 'Ma
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearAuthProfileCache();
   mocks.auth.currentUser = null;
   sessionStorage.clear();
   mocks.setPersistence.mockResolvedValue(undefined);
@@ -122,6 +125,49 @@ describe('auth service', () => {
     await listener(firebaseUser());
     expect(callback).toHaveBeenNthCalledWith(1, null);
     expect(callback).toHaveBeenNthCalledWith(2, expect.objectContaining({ username: 'ana_martinez' }));
+  });
+
+  it('reuses the profile request across repeated token changes', async () => {
+    mocks.api.getProfile.mockResolvedValue({ profile });
+    const callback = vi.fn();
+    subscribeToAuth(callback);
+    const listener = mocks.onIdTokenChanged.mock.calls[0][1];
+    const user = firebaseUser();
+
+    await Promise.all([listener(user), listener(user)]);
+
+    expect(mocks.api.getProfile).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches an absent profile and falls back to Firebase data on unexpected errors', async () => {
+    const user = firebaseUser();
+    mocks.signInWithEmailAndPassword.mockResolvedValue({ user });
+    mocks.api.getProfile.mockRejectedValueOnce(new ApiError(404, { success: false, code: 'NOT_FOUND', message: 'profile missing' }));
+    await expect(loginUser({ email: 'ana@test.edu', password: 'secret1' })).resolves.toMatchObject({ user: { id: 'u1' } });
+
+    const callback = vi.fn();
+    subscribeToAuth(callback);
+    const listener = mocks.onIdTokenChanged.mock.calls[0][1];
+    await listener(user);
+    expect(mocks.api.getProfile).toHaveBeenCalledTimes(1);
+
+    clearAuthProfileCache();
+    mocks.api.getProfile.mockRejectedValueOnce(new Error('network'));
+    await listener(user);
+    expect(callback).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'u1', name: 'Ana' }));
+  });
+
+  it('clears the cached profile when logging out', async () => {
+    const user = firebaseUser();
+    mocks.api.getProfile.mockResolvedValue({ profile });
+    const callback = vi.fn();
+    subscribeToAuth(callback);
+    const listener = mocks.onIdTokenChanged.mock.calls[0][1];
+    await listener(user);
+    await logoutUser();
+    await listener(user);
+    expect(mocks.api.getProfile).toHaveBeenCalledTimes(2);
   });
 
   it('completes and updates profiles, then removes pending data', async () => {

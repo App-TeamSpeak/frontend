@@ -1,3 +1,4 @@
+import { signOut } from 'firebase/auth';
 import { firebaseAuth } from '../firebase';
 
 export type Sprint0Document = Record<string, unknown>;
@@ -23,7 +24,9 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   const headers = new Headers(init.headers); headers.set('Authorization', `Bearer ${await token(false)}`); if (init.body) headers.set('Content-Type', 'application/json');
   const response = await fetch(`${apiUrl}${path}`, { ...init, headers, cache: 'no-store' }); let body: unknown = null; try { body = await response.json(); } catch { throw new ApiError(response.status, invalidResponse); }
   const errorCode = isRecord(body) && typeof body.code === 'string' ? body.code : '';
-  if ((response.status === 401 || errorCode === 'AUTH_INVALID' || (response.status === 403 && errorCode === 'EMAIL_NOT_VERIFIED')) && !retried) { const user = firebaseAuth.currentUser; if (user) await user.getIdToken(true); return request<T>(path, init, true); }
+  const invalidSession = response.status === 401 || errorCode === 'AUTH_INVALID';
+  if ((invalidSession || (response.status === 403 && errorCode === 'EMAIL_NOT_VERIFIED')) && !retried) { const user = firebaseAuth.currentUser; if (user) await user.getIdToken(true); return request<T>(path, init, true); }
+  if (invalidSession && retried) await signOut(firebaseAuth);
   if (!response.ok || !isRecord(body) || body.success !== true) throw new ApiError(response.status, payloadFrom(body, { success: false, code: 'API_ERROR', message: 'La API devolvió un error. Reintenta en unos momentos.' }));
   return body.data as T;
 }

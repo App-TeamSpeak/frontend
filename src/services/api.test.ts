@@ -4,6 +4,8 @@ const auth = vi.hoisted(() => ({
   currentUser: { getIdToken: vi.fn().mockResolvedValue('token') },
 }));
 vi.mock('../firebase', () => ({ firebaseAuth: auth }));
+const signOut = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('firebase/auth', () => ({ signOut }));
 
 import { api, ApiError, fetchSprint0Demo } from './api';
 afterEach(() => vi.unstubAllGlobals());
@@ -92,6 +94,15 @@ describe('API client contract', () => {
     expect(getIdToken).toHaveBeenNthCalledWith(2, true);
     expect(getIdToken).toHaveBeenNthCalledWith(3, false);
     expect(fetch.mock.calls[1][1].headers.get('Authorization')).toBe('Bearer fresh-token');
+  });
+
+  it('clears the Firebase session after a second authentication failure', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ success: false, code: 'AUTH_INVALID', message: 'expired' }) });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(api.listRooms()).rejects.toMatchObject({ code: 'AUTH_INVALID', status: 401 });
+    expect(signOut).toHaveBeenCalledWith(auth);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it('returns structured API errors and rejects invalid JSON', async () => {
