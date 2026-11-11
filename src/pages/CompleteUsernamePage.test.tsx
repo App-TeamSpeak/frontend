@@ -21,6 +21,7 @@ describe('Completar username', () => {
     fireEvent.change(screen.getByLabelText('Nombre de usuario'), { target: { value: 'ana.martinez' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar nombre' }));
     expect(screen.getByRole('button', { name: 'Guardando…' })).toBeDisabled();
+    expect(screen.getByText('Estamos guardando tu nombre de usuario.')).toBeInTheDocument();
     await act(async () => { vi.advanceTimersByTime(700); await Promise.resolve(); });
     expect(screen.getByRole('alert')).toHaveTextContent('Ese nombre ya está en uso.');
   });

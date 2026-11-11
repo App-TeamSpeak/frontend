@@ -146,8 +146,12 @@ button:not(:disabled), .button { cursor: pointer; }
 .dashboard-shell .header-inner { max-width: none; padding-inline: 64px; }
 .dashboard-shell .site-header nav a { min-height: 32px; text-decoration: none; }
 .dashboard-shell .site-header nav a[aria-current=page] { color: #1d4ed8; text-decoration: none; }
+.header-profile-actions { position: relative; width: 40px; height: 40px; flex: 0 0 40px; }
 .profile-avatar { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 50%; background: #dce8ff; color: #1d4ed8; font: 600 14px/1 'Inter Variable', sans-serif; text-decoration: none; }
 .profile-avatar:hover { background: #c9dcff; }
+.header-logout-icon { position: absolute; top: 0; left: 56px; display: grid; width: 40px; height: 40px; place-items: center; padding: 0; overflow: visible; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--muted); }
+.header-logout-icon svg { display: block; width: 20px; height: 20px; overflow: visible; }
+.header-logout-icon:hover { border-color: var(--link); color: var(--link); background: var(--subtle); }
 .dashboard-shell .main-content { padding: 32px 5% 24px; }
 .dashboard { max-width: 1136px; margin: auto; padding-inline: 32px; }
 .dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
