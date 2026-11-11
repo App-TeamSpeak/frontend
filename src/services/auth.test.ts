@@ -40,6 +40,7 @@ import {
   completeProfile,
   configureAuth,
   continueWithGoogle,
+  clearAuthProfileCache,
   currentFirebaseUser,
   deleteUserAccount,
   loginUser,
@@ -66,6 +67,7 @@ const profile = { uid: 'u1', email: 'ana@test.edu', nombre: 'Ana', apellido: 'Ma
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearAuthProfileCache();
   mocks.auth.currentUser = null;
   sessionStorage.clear();
   mocks.setPersistence.mockResolvedValue(undefined);
@@ -122,6 +124,19 @@ describe('auth service', () => {
     await listener(firebaseUser());
     expect(callback).toHaveBeenNthCalledWith(1, null);
     expect(callback).toHaveBeenNthCalledWith(2, expect.objectContaining({ username: 'ana_martinez' }));
+  });
+
+  it('reuses the profile request across repeated token changes', async () => {
+    mocks.api.getProfile.mockResolvedValue({ profile });
+    const callback = vi.fn();
+    subscribeToAuth(callback);
+    const listener = mocks.onIdTokenChanged.mock.calls[0][1];
+    const user = firebaseUser();
+
+    await Promise.all([listener(user), listener(user)]);
+
+    expect(mocks.api.getProfile).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledTimes(2);
   });
 
   it('completes and updates profiles, then removes pending data', async () => {
