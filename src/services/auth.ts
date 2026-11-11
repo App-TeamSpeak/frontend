@@ -1,95 +1,32 @@
-// Mock temporal de autenticación para desarrollo del flujo. No sustituye un backend:
-// la contraseña sólo se conserva localmente para permitir probar el recorrido completo.
-export type AuthUser = {
-  id: string;
-  name: string;
-  email: string;
-  username?: string;
-};
+import { browserLocalPersistence, createUserWithEmailAndPassword, GoogleAuthProvider, onIdTokenChanged, sendEmailVerification, sendPasswordResetEmail, setPersistence, signInWithEmailAndPassword, signInWithPopup, signOut, updateProfile as updateFirebaseProfile, type User } from 'firebase/auth';
+import { assertFirebaseConfiguration, firebaseAuth } from '../firebase';
+import { api, ApiError, type ProfileResponse, type UserProfile } from './api';
 
-type StoredUser = AuthUser & { password: string };
-type AuthResult = { user: AuthUser };
-type AuthErrorCode = 'EMAIL_EXISTS' | 'INVALID_CREDENTIALS' | 'USERNAME_TAKEN';
+export type AuthUser = { id: string; name: string; apellido: string; email: string; username?: string; avatarUrl: string | null; emailVerified: boolean };
+export class AuthError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.name = 'AuthError'; this.code = code; } }
+const pendingKey = 'teamspeak.pending-profile';
+type PendingProfile = { nombre: string; apellido: string };
 
-export class AuthError extends Error {
-  code: AuthErrorCode;
-  constructor(code: AuthErrorCode, message: string) {
-    super(message);
-    this.name = 'AuthError';
-    this.code = code;
-  }
+function profileUser(user: User, response?: ProfileResponse): AuthUser {
+  const profile = response?.profile;
+  return { id: user.uid, name: profile?.nombre ?? user.displayName?.split(' ').slice(0, -1).join(' ') ?? user.displayName ?? '', apellido: profile?.apellido ?? user.displayName?.split(' ').slice(-1).join(' ') ?? '', email: user.email ?? '', username: profile?.username, avatarUrl: profile?.avatarUrl ?? user.photoURL, emailVerified: user.emailVerified };
 }
+function savePending(value: PendingProfile) { sessionStorage.setItem(pendingKey, JSON.stringify(value)); }
+function readPending(): PendingProfile { try { return JSON.parse(sessionStorage.getItem(pendingKey) ?? '{}') as PendingProfile; } catch { return { nombre: '', apellido: '' }; } }
+function mapAuthError(error: unknown): never { if (error instanceof ApiError) throw error; const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'AUTH_ERROR'; const messages: Record<string, string> = { 'auth/email-already-in-use': 'Este correo ya está registrado. Inicia sesión.', 'auth/invalid-email': 'Introduce un correo electrónico válido.', 'auth/invalid-credential': 'Verifica tu correo y contraseña.', 'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.', 'auth/operation-not-allowed': 'El registro con correo y contraseña no está habilitado en Firebase.', 'auth/admin-restricted-operation': 'El registro con correo y contraseña está restringido en Firebase.', 'auth/invalid-api-key': 'La configuración pública de Firebase no es válida.', 'auth/internal-error': 'Firebase no pudo completar la operación. Revisa la configuración de Authentication.', 'auth/network-request-failed': 'No pudimos conectar con Firebase. Revisa tu conexión e inténtalo de nuevo.', 'auth/popup-closed-by-user': 'Cerraste la ventana de Google antes de terminar.', 'auth/too-many-requests': 'Hay demasiados intentos. Espera unos minutos e inténtalo de nuevo.', 'auth/requires-recent-login': 'Vuelve a iniciar sesión para confirmar esta acción.' }; throw new AuthError(code, messages[code] ?? 'No pudimos completar la autenticación. Inténtalo de nuevo.'); }
 
-const sessionKey = 'teamspeak.session';
-const usersKey = 'teamspeak.users';
-const delayMs = 700;
-const seedUsers: StoredUser[] = [{ id: 'user-ana', name: 'Ana Martínez', email: 'ana@ejemplo.edu', username: 'ana.martinez', password: 'correcta' }];
-
-function readUsers(): StoredUser[] {
-  try {
-    const raw = window.localStorage.getItem(usersKey);
-    return raw ? JSON.parse(raw) as StoredUser[] : seedUsers;
-  } catch {
-    return seedUsers;
-  }
-}
-
-function writeUsers(users: StoredUser[]) { window.localStorage.setItem(usersKey, JSON.stringify(users)); }
-function publicUser(user: StoredUser): AuthUser { const { password: _password, ...safeUser } = user; return safeUser; }
-function wait() { return new Promise<void>(resolve => window.setTimeout(resolve, delayMs)); }
-
-export function getSession(): AuthUser | null {
-  try {
-    const raw = window.localStorage.getItem(sessionKey);
-    return raw ? JSON.parse(raw) as AuthUser : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveSession(user: AuthUser) { window.localStorage.setItem(sessionKey, JSON.stringify(user)); }
-
-export async function registerUser(input: { name: string; email: string; password: string }): Promise<AuthResult> {
-  await wait();
-  const users = readUsers();
-  if (users.some(user => user.email.toLowerCase() === input.email.toLowerCase())) throw new AuthError('EMAIL_EXISTS', 'Este correo ya está registrado. Usa otro o inicia sesión.');
-  const user: StoredUser = { id: `user-${Date.now()}`, name: input.name, email: input.email, password: input.password };
-  writeUsers([...users, user]);
-  const safeUser = publicUser(user);
-  saveSession(safeUser);
-  return { user: safeUser };
-}
-
-export async function loginUser(input: { identifier: string; password: string }): Promise<AuthResult> {
-  await wait();
-  const identifier = input.identifier.toLowerCase();
-  const user = readUsers().find(candidate => candidate.email.toLowerCase() === identifier || candidate.username?.toLowerCase() === identifier);
-  if (!user || user.password !== input.password) throw new AuthError('INVALID_CREDENTIALS', 'Verifica tu usuario y contraseña e inténtalo de nuevo.');
-  const safeUser = publicUser(user);
-  saveSession(safeUser);
-  return { user: safeUser };
-}
-
-export async function isUsernameAvailable(username: string): Promise<boolean> {
-  await wait();
-  return !readUsers().some(user => user.username?.toLowerCase() === username.trim().toLowerCase());
-}
-
-export async function saveUsername(username: string): Promise<AuthResult> {
-  await wait();
-  const session = getSession();
-  if (!session) throw new AuthError('INVALID_CREDENTIALS', 'Tu sesión expiró. Ingresa nuevamente.');
-  const normalized = username.trim().toLowerCase();
-  const users = readUsers();
-  const current = users.find(user => user.id === session.id);
-  if (!current) throw new AuthError('INVALID_CREDENTIALS', 'Tu sesión expiró. Ingresa nuevamente.');
-  if (users.some(user => user.id !== current.id && user.username?.toLowerCase() === normalized)) throw new AuthError('USERNAME_TAKEN', 'Ese nombre ya está en uso. Prueba con otro.');
-  const updated = { ...current, username: normalized };
-  writeUsers(users.map(user => user.id === current.id ? updated : user));
-  const safeUser = publicUser(updated);
-  saveSession(safeUser);
-  return { user: safeUser };
-}
-
-export function logoutUser() { window.localStorage.removeItem(sessionKey); }
-export function clearAuthStorage() { window.localStorage.removeItem(sessionKey); window.localStorage.removeItem(usersKey); }
+export async function configureAuth() { assertFirebaseConfiguration(); await setPersistence(firebaseAuth, browserLocalPersistence); }
+export function subscribeToAuth(callback: (user: AuthUser | null) => void) { return onIdTokenChanged(firebaseAuth, async user => { if (!user) { callback(null); return; } try { callback(profileUser(user, await api.getProfile())); } catch { callback(profileUser(user)); } }); }
+export function currentFirebaseUser() { return firebaseAuth.currentUser; }
+export async function refreshCurrentUser() { const user = firebaseAuth.currentUser; if (!user) return null; await user.reload(); await user.getIdToken(true); return user; }
+export async function registerUser(input: { nombre: string; apellido: string; email: string; password: string }) { try { await configureAuth(); const credential = await createUserWithEmailAndPassword(firebaseAuth, input.email.trim(), input.password); savePending({ nombre: input.nombre.trim(), apellido: input.apellido.trim() }); await sendEmailVerification(credential.user); return { user: profileUser(credential.user) }; } catch (error) { return mapAuthError(error); } }
+export async function loginUser(input: { email: string; password: string }) { try { await configureAuth(); const credential = await signInWithEmailAndPassword(firebaseAuth, input.email.trim(), input.password); return { user: profileUser(credential.user, (await safeProfile()) ?? undefined) }; } catch (error) { return mapAuthError(error); } }
+export async function continueWithGoogle() { try { await configureAuth(); const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider()); const profile = await safeProfile(); if (!profile?.profile) savePending({ nombre: credential.user.displayName?.split(' ')[0] ?? '', apellido: credential.user.displayName?.split(' ').slice(1).join(' ') ?? '' }); return { user: profileUser(credential.user, profile ?? undefined) }; } catch (error) { return mapAuthError(error); } }
+async function safeProfile() { try { return await api.getProfile(); } catch (error) { if (error instanceof ApiError && [403, 404, 409].includes(error.status)) return null; throw error; } }
+export async function completeProfile(username: string) { const pending = readPending(); try { const result = await api.createProfile({ nombre: pending.nombre || firebaseAuth.currentUser?.displayName?.split(' ')[0] || 'Usuario', apellido: pending.apellido || firebaseAuth.currentUser?.displayName?.split(' ').slice(1).join(' ') || 'TeamSpeak', username: username.trim() }); sessionStorage.removeItem(pendingKey); return { user: profileUser(firebaseAuth.currentUser!, result) }; } catch (error) { return mapAuthError(error); } }
+export async function updateUserProfile(input: { nombre?: string; apellido?: string; username?: string; avatarUrl?: string | null }) { try { const result = await api.updateProfile(input); return { user: profileUser(firebaseAuth.currentUser!, result) }; } catch (error) { return mapAuthError(error); } }
+export async function deleteUserAccount() { try { await api.deleteProfile(); await signOut(firebaseAuth); } catch (error) { return mapAuthError(error); } }
+export async function resendVerification() { try { if (!firebaseAuth.currentUser) throw new AuthError('AUTH_REQUIRED', 'Inicia sesión para continuar.'); await sendEmailVerification(firebaseAuth.currentUser); } catch (error) { return mapAuthError(error); } }
+export async function resetPassword(email: string) { try { assertFirebaseConfiguration(); await sendPasswordResetEmail(firebaseAuth, email.trim()); } catch (error) { return mapAuthError(error); } }
+export async function logoutUser() { await signOut(firebaseAuth); }
+export function getSession(): AuthUser | null { return null; }
