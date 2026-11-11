@@ -6,7 +6,7 @@ export function MainLayout() {
   const { pathname } = useLocation();
   const main = useRef<HTMLElement>(null);
   const previous = useRef(pathname);
-  const isAuthPage = pathname === '/login' || pathname === '/registro' || pathname === '/completar-username';
+  const isAuthPage = pathname === '/login' || pathname === '/registro' || pathname === '/completar-username' || pathname === '/verificar-correo';
   const isRegisterPage = pathname === '/registro';
   const isDashboardPage = pathname === '/dashboard';
   const isRoomPage = /^\/salas\/(?!crear$|unirse$)[^/]+$/.test(pathname);

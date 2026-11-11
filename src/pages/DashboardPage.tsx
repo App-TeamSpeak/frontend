@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageTitle } from '../components/PageTitle';
+import { api, ApiError, type Room } from '../services/api';
 
 type RoomPreview = {
   id: string;
@@ -9,16 +10,14 @@ type RoomPreview = {
   participants: number;
   connected: number;
   accent: string;
+  ownerId: string;
 };
 
 type DashboardStatus = 'loading' | 'success' | 'error' | 'empty';
 type RoomDialogState = { kind: 'create' } | { kind: 'join' } | { kind: 'edit'; room: RoomPreview } | { kind: 'delete'; room: RoomPreview } | null;
 
-const rooms: RoomPreview[] = [
-  { id: 'CALC-8F2K', name: 'Cálculo II · Grupo A', activity: 'Última actividad hace 10 min', participants: 4, connected: 3, accent: '#2857c5' },
-  { id: 'ARQ-4M7P', name: 'Arquitectura de software', activity: 'Última actividad ayer', participants: 6, connected: 2, accent: '#0f766e' },
-  { id: 'EST-2Q9L', name: 'Proyecto de estructuras', activity: 'Última actividad hace 3 días', participants: 3, connected: 1, accent: '#7c3aed' },
-];
+const accents = ['#2857c5', '#0f766e', '#7c3aed'];
+function toPreview(room: Room, index: number): RoomPreview { return { ...room, activity: 'Actividad disponible en la sala', participants: 0, connected: 0, accent: accents[index % accents.length] }; }
 
 function RoomCardSkeleton({ accent }: { accent: string }) {
   return <article className="room-card room-card-skeleton" style={{ '--room-accent': accent } as React.CSSProperties} aria-hidden="true">
@@ -89,11 +88,7 @@ function RoomManagementDialog({ dialog, onClose, onCreate, onSave, onDelete, onJ
         nameInputRef.current?.focus();
         return;
       }
-      if (isJoin && !/^[A-Z0-9]{3,6}-[A-Z0-9]{4}$/i.test(name)) {
-        setJoinError('invalid');
-        nameInputRef.current?.focus();
-        return;
-      }
+      if (isJoin && name.length < 1) { setJoinError('invalid'); nameInputRef.current?.focus(); return; }
       if (isCreate) onCreate(name, privacy);
       else if (isJoin) onJoin(name);
       else onSave(name);
@@ -111,12 +106,12 @@ function RoomManagementDialog({ dialog, onClose, onCreate, onSave, onDelete, onJ
           {!isCreate && room && <><div className="form-field room-management-dialog-id-field"><label htmlFor="edit-room-id">ID de la sala</label><input className="room-management-dialog-readonly" id="edit-room-id" value={`${room.id}  ·  No editable`} readOnly aria-readonly="true" /></div><p className="room-management-dialog-helper">El ID se mantiene igual aunque cambies el nombre.</p></>}
           {isJoin && <p className="room-management-dialog-helper room-management-dialog-join-helper">No necesitas correo, nombre ni contraseña para unirte desde aquí.</p>}
           {isCreate && <fieldset className="room-privacy-group"><legend>Privacidad</legend><div className="room-privacy-options">
-            <label className={`room-privacy-option${privacy === 'private' ? ' room-privacy-option-selected' : ''}`} htmlFor="room-privacy-private" aria-label="Privada">
-              <input className="room-privacy-radio" id="room-privacy-private" type="radio" name="privacy" value="private" checked={privacy === 'private'} onChange={() => setPrivacy('private')} />
+            <label className={`room-privacy-option${privacy === 'private' ? ' room-privacy-option-selected' : ''}`}>
+              <input className="room-privacy-radio" type="radio" name="privacy" value="private" checked={privacy === 'private'} onChange={() => setPrivacy('private')} />
               <span className="room-privacy-copy"><span className="room-privacy-label">Privada</span><span className="room-privacy-description">Solo quienes tengan el ID pueden unirse.</span></span>
             </label>
-            <label className={`room-privacy-option${privacy === 'public' ? ' room-privacy-option-selected' : ''}`} htmlFor="room-privacy-public" aria-label="Pública">
-              <input className="room-privacy-radio" id="room-privacy-public" type="radio" name="privacy" value="public" checked={privacy === 'public'} onChange={() => setPrivacy('public')} />
+            <label className={`room-privacy-option${privacy === 'public' ? ' room-privacy-option-selected' : ''}`}>
+              <input className="room-privacy-radio" type="radio" name="privacy" value="public" checked={privacy === 'public'} onChange={() => setPrivacy('public')} />
               <span className="room-privacy-copy"><span className="room-privacy-label">Pública</span><span className="room-privacy-description">Cualquier persona con el enlace puede unirse.</span></span>
             </label>
           </div></fieldset>}
@@ -164,12 +159,11 @@ function RoomCard({ room, openMenu, onToggleMenu, onEdit, onDelete, menuButtonRe
 
 export function DashboardPage() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [roomList, setRoomList] = useState<RoomPreview[]>(rooms);
+  const [roomList, setRoomList] = useState<RoomPreview[]>([]);
   const [managementDialog, setManagementDialog] = useState<RoomDialogState>(null);
   const menuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const dialogRoomId = useRef<string | null>(null);
   const [searchParams] = useSearchParams();
-  const [loadAttempt, setLoadAttempt] = useState(0);
   const [status, setStatus] = useState<DashboardStatus>('loading');
   const shouldSimulateError = searchParams.get('state') === 'error';
   const shouldSimulateEmpty = searchParams.get('state') === 'empty';
@@ -198,41 +192,16 @@ export function DashboardPage() {
       document.removeEventListener('pointerdown', handlePointerDown);
     };
   }, [managementDialog, openMenu]);
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      if (loadAttempt === 0 && shouldSimulateError) {
-        setStatus('error');
-      } else if (loadAttempt === 0 && shouldSimulateEmpty) {
-        setStatus('empty');
-      } else {
-        setStatus('success');
-      }
-    }, 900);
-    return () => window.clearTimeout(timeout);
-  }, [loadAttempt, shouldSimulateEmpty, shouldSimulateError]);
-  const handleRetry = () => {
-    setStatus('loading');
-    setLoadAttempt(attempt => attempt + 1);
-  };
-  const handleSaveRoom = (name: string) => {
-    if (!managementDialog || managementDialog.kind !== 'edit') return;
-    setRoomList(current => current.map(room => room.id === managementDialog.room.id ? { ...room, name } : room));
-    setManagementDialog(null);
-  };
-  const handleCreateRoom = (name: string, privacy: string) => {
-    setRoomList(current => [...current, { id: `NUE-${String(current.length + 1).padStart(3, '0')}`, name, activity: 'Última actividad ahora', participants: 1, connected: 1, accent: privacy === 'public' ? '#0f766e' : '#2857c5' }]);
-    setStatus('success');
-    setManagementDialog(null);
-  };
+  const loadRooms = async () => { setStatus('loading'); try { const data = await api.listRooms(); setRoomList(data.map(toPreview)); setStatus(data.length ? 'success' : 'empty'); } catch { setStatus('error'); } };
+  useEffect(() => { if (shouldSimulateError) { setStatus('error'); return; } if (shouldSimulateEmpty) { setStatus('empty'); return; } void loadRooms(); }, [shouldSimulateEmpty, shouldSimulateError]);
+  const handleRetry = () => { void loadRooms(); };
+  const handleSaveRoom = async (name: string) => { if (!managementDialog || managementDialog.kind !== 'edit') return; try { const updated = await api.updateRoom(managementDialog.room.id, { name }); setRoomList(current => current.map(room => room.id === updated.id ? { ...room, ...toPreview(updated, current.indexOf(room)) } : room)); setManagementDialog(null); } catch (error) { setStatus(error instanceof ApiError ? 'error' : 'error'); } };
+  const handleCreateRoom = async (name: string, _privacy: string) => { try { const created = await api.createRoom({ name }); setRoomList(current => [...current, toPreview(created, current.length)]); setStatus('success'); setManagementDialog(null); } catch { setStatus('error'); } };
   const navigate = useNavigate();
-  const handleJoinRoom = (id: string) => {
-    setManagementDialog(null);
-    navigate(`/salas/${encodeURIComponent(id)}`);
-  };
-  const handleDeleteRoom = () => {
+  const handleJoinRoom = async (id: string) => { try { await api.joinRoom(id); setManagementDialog(null); navigate(`/salas/${encodeURIComponent(id)}`); } catch { setStatus('error'); } };
+  const handleDeleteRoom = async () => {
     if (!managementDialog || managementDialog.kind !== 'delete') return;
-    setRoomList(current => current.filter(room => room.id !== managementDialog.room.id));
-    setManagementDialog(null);
+    try { await api.deleteRoom(managementDialog.room.id); setRoomList(current => current.filter(room => room.id !== managementDialog.room.id)); setManagementDialog(null); } catch { setStatus('error'); }
   };
   const loading = status === 'loading';
   const error = status === 'error';
