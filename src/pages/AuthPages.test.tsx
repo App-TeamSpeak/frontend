@@ -75,8 +75,22 @@ describe('AuthPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta' }));
     expect(await screen.findByText('Las contraseñas no coinciden.')).toBeInTheDocument();
 
+    fireEvent.change(screen.getByLabelText('Confirmar contraseña'), { target: { value: 'ana@test.edu' } });
+    fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'ana@test.edu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta' }));
+    expect(await screen.findByText(/La contraseña no puede ser un correo electrónico/)).toBeInTheDocument();
+
     vi.mocked(continueWithGoogle).mockRejectedValue(new AuthError('auth/popup-closed-by-user', 'Cerraste la ventana'));
     fireEvent.click(screen.getByRole('button', { name: 'Continuar con Google' }));
-    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(await screen.findByText(/Inicio con Google cancelado/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'));
+  });
+
+  it('returns to login with a readable message when Google fails', async () => {
+    vi.mocked(continueWithGoogle).mockRejectedValue(new Error('Servicio no disponible'));
+    renderAuth(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con Google' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos continuar con Google');
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'));
   });
 });

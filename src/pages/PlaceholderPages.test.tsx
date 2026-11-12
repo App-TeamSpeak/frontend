@@ -67,6 +67,11 @@ describe('PlaceholderPages', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('nuevo correo');
   });
 
+  it('aligns verification actions with the authentication card', () => {
+    renderPage(<EmailVerificationPage />);
+    expect(screen.getByRole('button', { name: 'Ya verifiqué mi correo' }).parentElement).toHaveClass('verification-actions');
+  });
+
   it('recovers a password and reports service errors', async () => {
     mocks.resetPassword.mockResolvedValue(undefined);
     renderPage(<RecoveryPage />);

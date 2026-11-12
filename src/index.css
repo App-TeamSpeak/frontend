@@ -354,7 +354,10 @@ button:not(:disabled), .button { cursor: pointer; }
 .username-card { min-height: 0; height: auto; }
 .username-card form { margin-top: 38px; }
 .username-submit { width: 100%; min-height: 48px; margin-top: 14px; }
+.verification-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 12px; margin-top: 28px; }
+.verification-actions .button { min-height: 48px; }
 .username-cancel { display: block; margin-top: 18px; color: var(--link); font-family: 'Inter Variable', sans-serif; font-size: 14px; font-weight: 600; text-align: center; }
+@media (max-width: 767px) { .verification-actions { flex-direction: column; } .verification-actions .button { width: 100%; } }
 .header-logout { min-height: 40px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
 .header-logout:hover { border-color: var(--link); color: var(--link); }
 .logout-dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; padding: 20px; place-items: center; background: var(--overlay); }

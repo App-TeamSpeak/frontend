@@ -20,6 +20,14 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('dialog', { name: 'Crear sala' })).toBeInTheDocument();
   });
 
+  it('anuncia los errores del formulario de sala', async () => {
+    render(<MemoryRouter><DashboardPage /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'No tienes salas' });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear mi primera sala' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear sala' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Ingresa el nombre de la Sala');
+  });
+
   it('renders rooms and completes create, edit, delete and join flows', async () => {
     listRooms.mockResolvedValue([{ id: 'room-1', name: 'Física', ownerId: 'u1' }]);
     createRoom.mockResolvedValue({ id: 'room-2', name: 'Cálculo', ownerId: 'u1' });
