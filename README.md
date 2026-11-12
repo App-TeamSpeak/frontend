@@ -32,6 +32,15 @@ npm run validate
 El comando ejecuta typecheck, pruebas con cobertura y build. El reporte LCOV se
 genera en `coverage/lcov.info` y se consume en SonarQube Cloud desde GitHub Actions.
 
+Para ejecutar la auditoría E2E en Chromium de escritorio y móvil:
+
+```bash
+npm run test:e2e
+```
+
+Playwright levanta Vite automáticamente en `http://127.0.0.1:4173` y conserva
+trazas, videos y capturas sólo cuando una prueba falla.
+
 ## Despliegue
 
 El repositorio está preparado para Vercel. Configura las variables `VITE_API_URL` y

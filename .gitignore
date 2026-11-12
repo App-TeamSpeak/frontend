@@ -3,6 +3,8 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 dist/
 coverage/
+playwright-report/
+test-results/
 .env
 .env.*
 !.env.example
