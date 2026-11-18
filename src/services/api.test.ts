@@ -37,7 +37,7 @@ describe('API client contract', () => {
   });
 
   it('sends bearer headers, JSON bodies and normalizes room/message identifiers', async () => {
-    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true, data: { roomId: 'room-1', name: 'Sala', ownerId: 'u1' } }) });
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({ success: true, data: { roomId: 'room-1', name: 'Sala', ownerId: 'u1' } }) });
     vi.stubGlobal('fetch', fetch);
     await expect(api.createRoom({ name: 'Sala' })).resolves.toEqual({ id: 'room-1', roomId: 'room-1', name: 'Sala', ownerId: 'u1' });
     const [, options] = fetch.mock.calls[0];
@@ -49,6 +49,17 @@ describe('API client contract', () => {
     fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ success: true, data: [{ messageId: 'm1', senderId: 'u2', roomId: 'room-1', text: 'Hola', createdAt: '2026-01-01' }] }) });
     await expect(api.listMessages('room/1')).resolves.toEqual([{ id: 'm1', messageId: 'm1', authorId: 'u2', senderId: 'u2', roomId: 'room-1', text: 'Hola', createdAt: '2026-01-01' }]);
     expect(fetch.mock.calls[1][0]).toContain('/api/rooms/room%2F1/messages');
+  });
+
+  it('does not confirm room creation with a non-201 or an absent ID', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: async () =>
+      ({ success: true, data: { roomId: 'room-1', name: 'Sala', ownerId: 'u1' } }) })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () =>
+        ({ success: true, data: { name: 'Sala', ownerId: 'u1' } }) });
+    vi.stubGlobal('fetch', fetch);
+    await expect(api.createRoom({ name: 'Sala' })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    await expect(api.createRoom({ name: 'Sala' })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it('covers profile and room operations with their HTTP contracts', async () => {

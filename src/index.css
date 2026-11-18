@@ -459,6 +459,8 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .room-header-brand p { margin-top: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .room-header-status { display: flex; align-items: center; gap: 20px; margin-left: auto; margin-right: 51px; color: var(--muted); font-size: 13px; white-space: nowrap; }
 .room-live-badge { display: inline-flex; width: 130px; min-height: 24px; align-items: center; padding: 0 10px; border-radius: 12px; background: var(--secondary); color: var(--success); font: 500 11px/1 'Inter Variable', sans-serif; }
+.room-connection-notice { order: 4; flex: 1 0 100%; margin: 0; padding-bottom: 12px; color: var(--text); font-size: 14px; }
+.room-header:has(.room-connection-notice) { flex-wrap: wrap; row-gap: 8px; }
 .room-header-actions { display: flex; align-items: center; gap: 70px; }
 .room-panel-toggles { display: flex; width: 220px; height: 40px; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; border-radius: 10px; background: var(--subtle); }
 .room-panel-toggle, .room-more-button { min-height: 32px; border: 0; background: transparent; color: var(--text); font: 600 12px/1 'Inter Variable', sans-serif; }
@@ -681,3 +683,15 @@ button:disabled { cursor: not-allowed; opacity: .6; }
   .user-profile-actions :is(.button, .primary) { min-width: 0; min-height: 46px; padding-inline: 8px; }
   .user-profile-actions .button:only-child { grid-column: 1 / -1; }
 }
+
+.room-create-dialog { position: fixed; inset: 0; margin: auto; max-width: calc(100% - 32px); max-height: calc(100dvh - 32px); overflow: auto; color: var(--text); }
+.room-create-dialog::backdrop { background: var(--overlay); }
+.room-create-page { margin: 0 auto; }
+.room-create-note, .room-create-alert, .room-create-success, .room-create-progress, .room-create-review { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); overflow-wrap: anywhere; }
+.room-create-alert { color: var(--error); border-color: var(--error); }
+.room-create-success { color: var(--success); background: #133a2c; border-color: #2a8063; }
+.room-create-review { max-height: 180px; overflow: auto; }
+.room-id-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-block: 12px; overflow-wrap: anywhere; }
+.room-id-actions [role=status]:empty { position: absolute; }
+.room-id-actions .button { min-height: 44px; padding-inline: 12px; }
+.room-create-dialog .form-field input:not([aria-invalid=true]), .room-create-page .form-field input:not([aria-invalid=true]) { border-color: var(--border-strong); }
