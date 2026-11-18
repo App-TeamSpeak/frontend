@@ -19,19 +19,57 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 function normalizeRoom(room: RoomPayload): Room { return { ...room, id: room.id || room.roomId || '' }; }
 function normalizeMessage(message: MessagePayload): Message { return { ...message, id: message.id || message.messageId || '', authorId: message.authorId || message.senderId || '' }; }
 function payloadFrom(value: unknown, fallback: ApiErrorPayload): ApiErrorPayload { if (!isRecord(value)) return fallback; return { success: false, code: typeof value.code === 'string' ? value.code : fallback.code, message: typeof value.message === 'string' ? value.message : fallback.message, details: value.details }; }
-async function token(forceRefresh = false) { const user = firebaseAuth.currentUser; if (!user) throw new ApiError(401, { success: false, code: 'AUTH_REQUIRED', message: 'Inicia sesión para continuar.' }); return user.getIdToken(forceRefresh); }
-async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
-  const headers = new Headers(init.headers); headers.set('Authorization', `Bearer ${await token(false)}`); if (init.body) headers.set('Content-Type', 'application/json');
-  const response = await fetch(`${apiUrl}${path}`, { ...init, headers, cache: 'no-store' }); let body: unknown = null; try { body = await response.json(); } catch { throw new ApiError(response.status, invalidResponse); }
+function authRequired() {
+  return new ApiError(401, {
+    success: false, code: 'AUTH_REQUIRED', message: 'Inicia sesión para continuar.',
+  });
+}
+
+async function sessionToken(user: NonNullable<typeof firebaseAuth.currentUser>, refresh: boolean) {
+  try {
+    return await user.getIdToken(refresh);
+  } catch (error) {
+    const code = isRecord(error) ? error.code : undefined;
+    if (code === 'auth/user-token-expired' || code === 'auth/invalid-user-token' || code === 'auth/user-disabled') {
+      if (firebaseAuth.currentUser === user) await signOut(firebaseAuth);
+      throw authRequired();
+    }
+    throw error;
+  }
+}
+
+async function request<T>(path: string, init: RequestInit = {}, user = firebaseAuth.currentUser, retried = false): Promise<T> {
+  if (!user || firebaseAuth.currentUser !== user) throw authRequired();
+  init.signal?.throwIfAborted();
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${await sessionToken(user, false)}`);
+  if (init.body) headers.set('Content-Type', 'application/json');
+  if (firebaseAuth.currentUser !== user) throw authRequired();
+  init.signal?.throwIfAborted();
+  const response = await fetch(`${apiUrl}${path}`, { ...init, headers, cache: 'no-store' });
+  let body: unknown = null;
+  try { body = await response.json(); } catch {
+    if (response.status !== 401) throw new ApiError(response.status, invalidResponse);
+  }
+  init.signal?.throwIfAborted();
+  if (firebaseAuth.currentUser !== user) throw authRequired();
+
   const errorCode = isRecord(body) && typeof body.code === 'string' ? body.code : '';
   const invalidSession = response.status === 401 || errorCode === 'AUTH_INVALID';
-  if ((invalidSession || (response.status === 403 && errorCode === 'EMAIL_NOT_VERIFIED')) && !retried) { const user = firebaseAuth.currentUser; if (user) await user.getIdToken(true); return request<T>(path, init, true); }
+  if ((invalidSession || (response.status === 403 && errorCode === 'EMAIL_NOT_VERIFIED')) && !retried) {
+    await sessionToken(user, true);
+    return request<T>(path, init, user, true);
+  }
   if (invalidSession && retried) await signOut(firebaseAuth);
-  if (!response.ok || !isRecord(body) || body.success !== true) throw new ApiError(response.status, payloadFrom(body, { success: false, code: 'API_ERROR', message: 'La API devolvió un error. Reintenta en unos momentos.' }));
+  if (!response.ok || !isRecord(body) || body.success !== true) {
+    throw new ApiError(response.status, payloadFrom(body, invalidSession
+      ? { success: false, code: 'AUTH_INVALID', message: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
+      : { success: false, code: 'API_ERROR', message: 'La API devolvió un error. Reintenta en unos momentos.' }));
+  }
   return body.data as T;
 }
 export const api = {
-  getProfile: () => request<ProfileResponse>('/api/users/me'),
+  getProfile: (signal?: AbortSignal) => request<ProfileResponse>('/api/users/me', signal ? { signal } : undefined),
   createProfile: (input: { nombre: string; apellido: string; username: string; avatarUrl?: string | null }) => request<ProfileResponse>('/api/users/me', { method: 'POST', body: JSON.stringify(input) }),
   updateProfile: (input: Partial<{ nombre: string; apellido: string; username: string; avatarUrl: string | null }>) => request<ProfileResponse>('/api/users/me', { method: 'PATCH', body: JSON.stringify(input) }),
   deleteProfile: () => request<{ status: string }>('/api/users/me', { method: 'DELETE' }),
