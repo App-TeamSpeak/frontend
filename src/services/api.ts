@@ -11,12 +11,12 @@ const invalidResponse: ApiErrorPayload = { success: false, code: 'INVALID_RESPON
 
 export type UserProfile = { uid: string; email: string; nombre: string; apellido: string; username: string; usernameKey: string; avatarUrl: string | null; profileStatus: 'complete'; createdAt: string; updatedAt: string };
 export type ProfileResponse = { uid: string; profileStatus: 'complete' | 'incomplete'; profile: UserProfile | null };
-export type Room = { id: string; name: string; ownerId: string };
+export type Room = { id: string; name: string; ownerId: string; createdAt?: string; participants?: number; connected?: number };
 export type Message = { id: string; roomId: string; authorId: string; text: string; createdAt: string };
-type RoomPayload = Room & { roomId?: string; participants?: number; connected?: number; createdAt?: string };
+type RoomPayload = Omit<Room, 'id'> & { id?: string; roomId?: string };
 type MessagePayload = Message & { messageId?: string; senderId?: string };
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
-function normalizeRoom(room: RoomPayload): Room { return { ...room, id: room.id || room.roomId || '' }; }
+function normalizeRoom(room: RoomPayload): Room { const id = room?.roomId || room?.id; if (typeof id !== 'string' || !id.trim() || typeof room.name !== 'string' || typeof room.ownerId !== 'string') throw new ApiError(502, invalidResponse); return { ...room, id }; }
 function normalizeMessage(message: MessagePayload): Message { return { ...message, id: message.id || message.messageId || '', authorId: message.authorId || message.senderId || '' }; }
 function payloadFrom(value: unknown, fallback: ApiErrorPayload): ApiErrorPayload { if (!isRecord(value)) return fallback; return { success: false, code: typeof value.code === 'string' ? value.code : fallback.code, message: typeof value.message === 'string' ? value.message : fallback.message, details: value.details }; }
 function authRequired() {
@@ -38,7 +38,7 @@ async function sessionToken(user: NonNullable<typeof firebaseAuth.currentUser>, 
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}, user = firebaseAuth.currentUser, retried = false): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, user = firebaseAuth.currentUser, retried = false, expectedStatus?: number): Promise<T> {
   if (!user || firebaseAuth.currentUser !== user) throw authRequired();
   init.signal?.throwIfAborted();
   const headers = new Headers(init.headers);
@@ -58,7 +58,7 @@ async function request<T>(path: string, init: RequestInit = {}, user = firebaseA
   const invalidSession = response.status === 401 || errorCode === 'AUTH_INVALID';
   if ((invalidSession || (response.status === 403 && errorCode === 'EMAIL_NOT_VERIFIED')) && !retried) {
     await sessionToken(user, true);
-    return request<T>(path, init, user, true);
+    return request<T>(path, init, user, true, expectedStatus);
   }
   if (invalidSession && retried) await signOut(firebaseAuth);
   if (!response.ok || !isRecord(body) || body.success !== true) {
@@ -66,6 +66,7 @@ async function request<T>(path: string, init: RequestInit = {}, user = firebaseA
       ? { success: false, code: 'AUTH_INVALID', message: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
       : { success: false, code: 'API_ERROR', message: 'La API devolvió un error. Reintenta en unos momentos.' }));
   }
+  if (expectedStatus !== undefined && response.status !== expectedStatus) throw new ApiError(response.status, invalidResponse);
   return body.data as T;
 }
 export const api = {
@@ -73,6 +74,6 @@ export const api = {
   createProfile: (input: { nombre: string; apellido: string; username: string; avatarUrl?: string | null }) => request<ProfileResponse>('/api/users/me', { method: 'POST', body: JSON.stringify(input) }),
   updateProfile: (input: Partial<{ nombre: string; apellido: string; username: string; avatarUrl: string | null }>) => request<ProfileResponse>('/api/users/me', { method: 'PATCH', body: JSON.stringify(input) }),
   deleteProfile: () => request<{ status: string }>('/api/users/me', { method: 'DELETE' }),
-  listRooms: () => request<RoomPayload[]>('/api/rooms').then(rooms => rooms.map(normalizeRoom)), createRoom: (input: { name: string }) => request<RoomPayload>('/api/rooms', { method: 'POST', body: JSON.stringify(input) }).then(normalizeRoom), getRoom: (id: string) => request<RoomPayload>(`/api/rooms/${encodeURIComponent(id)}`).then(normalizeRoom), updateRoom: (id: string, input: { name: string }) => request<RoomPayload>(`/api/rooms/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(input) }).then(normalizeRoom), deleteRoom: (id: string) => request<unknown>(`/api/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' }), joinRoom: (id: string) => request<RoomPayload>(`/api/rooms/${encodeURIComponent(id)}/join`, { method: 'POST' }).then(normalizeRoom), listMessages: (id: string) => request<MessagePayload[]>(`/api/rooms/${encodeURIComponent(id)}/messages`).then(messages => messages.map(normalizeMessage)), createMessage: (id: string, input: { text: string }) => request<MessagePayload>(`/api/rooms/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(input) }).then(normalizeMessage),
+  listRooms: (signal?: AbortSignal) => request<RoomPayload[]>('/api/rooms', { signal }).then(rooms => rooms.map(normalizeRoom)), createRoom: (input: { name: string }, signal?: AbortSignal) => request<RoomPayload>('/api/rooms', { method: 'POST', body: JSON.stringify(input), signal }, undefined, false, 201).then(normalizeRoom), getRoom: (id: string) => request<RoomPayload>(`/api/rooms/${encodeURIComponent(id)}`).then(normalizeRoom), updateRoom: (id: string, input: { name: string }) => request<RoomPayload>(`/api/rooms/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(input) }).then(normalizeRoom), deleteRoom: (id: string) => request<unknown>(`/api/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' }), joinRoom: (id: string) => request<RoomPayload>(`/api/rooms/${encodeURIComponent(id)}/join`, { method: 'POST' }).then(normalizeRoom), listMessages: (id: string) => request<MessagePayload[]>(`/api/rooms/${encodeURIComponent(id)}/messages`).then(messages => messages.map(normalizeMessage)), createMessage: (id: string, input: { text: string }) => request<MessagePayload>(`/api/rooms/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(input) }).then(normalizeMessage),
 };
 export async function fetchSprint0Demo(signal?: AbortSignal): Promise<Sprint0Document> { const timeout = AbortSignal.timeout(60000); const response = await fetch(`${apiUrl}/api/sprint0/demo`, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout, cache: 'no-store' }); let body: unknown; try { body = await response.json(); } catch { throw invalidResponse; } if (!isRecord(body)) throw invalidResponse; if (!response.ok || body.success === false) throw payloadFrom(body, { success: false, code: 'API_ERROR', message: 'La API devolvió un error. Reintenta en unos momentos.' }); if (body.success !== true || !isRecord(body.data)) throw invalidResponse; return body.data; }

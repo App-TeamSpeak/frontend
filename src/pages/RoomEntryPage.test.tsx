@@ -1,24 +1,25 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ createRoom: vi.fn(), joinRoom: vi.fn() }));
 vi.mock('../services/api', () => ({ api: mocks, ApiError: class ApiError extends Error {} }));
 
 function LocationProbe() { return <span data-testid="location">{useLocation().pathname}</span>; }
-function renderEntry(create = false) { return render(<MemoryRouter><LocationProbe /><RoomEntryPage create={create} /></MemoryRouter>); }
+function renderEntry(create = false) { return render(<RouterProvider router={createMemoryRouter([{ path: "*", element: <><LocationProbe /><RoomEntryPage create={create} /></> }])} />); }
 import { RoomEntryPage } from './RoomEntryPage';
 
 afterEach(cleanup);
 
 describe('RoomEntryPage', () => {
   it('creates a room and navigates to it', async () => {
-    mocks.createRoom.mockResolvedValue({ id: 'room 1' });
+    mocks.createRoom.mockResolvedValue({ id: 'room 1', name: 'Sala', ownerId: 'u1' });
     renderEntry(true);
     fireEvent.change(screen.getByLabelText('Nombre de la sala'), { target: { value: ' Sala ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Crear sala' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Entrar' }));
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/salas/room%201'));
-    expect(mocks.createRoom).toHaveBeenCalledWith({ name: 'Sala' });
+    expect(mocks.createRoom).toHaveBeenCalledWith({ name: 'Sala' }, expect.any(AbortSignal));
   });
 
   it('joins a room and reports API errors', async () => {

@@ -7,6 +7,7 @@ import { LoginPage, RegisterPage } from './pages/AuthPages';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RoomPage } from './pages/RoomPage';
+import { RoomCreationSession } from './pages/RoomCreation';
 import { RoomEntryPage } from './pages/RoomEntryPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PublicOnlyRoute } from './components/PublicOnlyRoute';
@@ -38,5 +39,5 @@ export default function App() {
     setRouter(instance);
     return () => instance.dispose();
   }, []);
-  return <AuthProvider>{router && <RouterProvider router={router} />}</AuthProvider>;
+  return <AuthProvider><RoomCreationSession>{router && <RouterProvider router={router} />}</RoomCreationSession></AuthProvider>;
 }
