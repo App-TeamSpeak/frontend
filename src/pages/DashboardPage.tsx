@@ -180,7 +180,7 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
   }, [managementDialog, openMenu]);
   function acceptRooms(rooms: Room[]) {
     const owned = uid ? rooms.filter(room => room.ownerId === uid) : rooms;
-    setRoomList(owned.map(toPreview));
+    setRoomList(owned.map((item, index) => toPreview(item, index)));
     setStatus(owned.length ? 'success' : 'empty');
   }
   async function loadRooms() {
@@ -215,7 +215,7 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
   function handleCreateRoom(room: Room) {
     createdDuringLoad.current = [room, ...createdDuringLoad.current.filter(item => item.id !== room.id)];
     if (listFailed.current) setPartial(true);
-    setRoomList(current => [room, ...current.filter(item => item.id !== room.id)].map(toPreview));
+    setRoomList(current => [room, ...current.filter(item => item.id !== room.id)].map((item, index) => toPreview(item, index)));
     setStatus('success');
   }
   useEffect(() => {

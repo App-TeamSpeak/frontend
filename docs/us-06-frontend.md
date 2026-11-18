@@ -105,3 +105,7 @@ El dashboard conserva el aviso de listado incompleto tanto si el GET inicial fal
 Las pruebas usan temporizadores simulados, promesas controladas y navegación en Chromium para cubrir los vencimientos, las respuestas tardías, el cambio de cuenta, Atrás y Escape. La integración autenticada en Render y la verificación de existencia y membresía en el backend Realtime siguen pendientes.
 
 Validación final con Node 24.18.0. Pasaron 147 pruebas Vitest en 19 archivos y 30 pruebas Playwright en escritorio y móvil. Cobertura global de 91,17 % en líneas, 77,72 % en ramas, 86,01 % en sentencias y 88,28 % en funciones. Pasaron lint, TypeScript, build y `git diff --check`. El build mantiene la advertencia de tamaño del bundle. Las capturas de 390 × 844 y 1440 × 900 muestran la causa de autorización completa en el encabezado.
+
+## Corrección de fiabilidad en SonarQube Cloud
+
+El análisis del PR #13 señaló dos hallazgos `typescript:S7727` en el dashboard. El listado REST y la inserción de la sala confirmada pasaban `toPreview` directamente a `map`. Ahora ambos callbacks pasan explícitamente la sala y el índice que determina el color de la tarjeta. Se conserva el comportamiento del listado. El Quality Gate queda pendiente de una nueva ejecución remota.
