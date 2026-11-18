@@ -34,7 +34,7 @@ vi.mock('firebase/auth', () => ({
   updateProfile: mocks.updateProfile,
 }));
 vi.mock('../firebase', () => ({ firebaseAuth: mocks.auth, assertFirebaseConfiguration: mocks.assertFirebaseConfiguration }));
-vi.mock('./api', () => ({ api: mocks.api, ApiError: class ApiError extends Error { status: number; code = 'API_ERROR'; constructor(status = 500, message = 'API error') { super(message); this.status = status; } } }));
+vi.mock('./api', () => ({ api: mocks.api, ApiError: class ApiError extends Error { constructor(public status: number, payload: { code: string; message: string }) { super(payload.message); this.code = payload.code; } code: string; } }));
 
 import {
   completeProfile,
@@ -46,6 +46,7 @@ import {
   loginUser,
   logoutUser,
   refreshCurrentUser,
+  refreshProfile,
   registerUser,
   resendVerification,
   resetPassword,
@@ -68,6 +69,8 @@ const profile = { uid: 'u1', email: 'ana@test.edu', nombre: 'Ana', apellido: 'Ma
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.api.getProfile.mockReset();
+  mocks.onIdTokenChanged.mockReturnValue(vi.fn());
   clearAuthProfileCache();
   mocks.auth.currentUser = null;
   sessionStorage.clear();
@@ -102,80 +105,191 @@ describe('auth service', () => {
 
   it('logs in and tolerates a missing backend profile', async () => {
     const user = firebaseUser();
+    mocks.auth.currentUser = user;
     mocks.signInWithEmailAndPassword.mockResolvedValue({ user });
-    mocks.api.getProfile.mockResolvedValue({ profile: null });
+    mocks.api.getProfile.mockResolvedValue({ uid: 'u1', profileStatus: 'incomplete', profile: null });
     await expect(loginUser({ email: ' ana@test.edu ', password: 'secret1' })).resolves.toMatchObject({ user: { id: 'u1', name: 'Ana', apellido: 'Martínez' } });
   });
 
   it('continues with Google and creates pending names without a profile', async () => {
     const user = firebaseUser({ displayName: 'Ana Martínez' });
+    mocks.auth.currentUser = user;
     mocks.signInWithPopup.mockResolvedValue({ user });
-    mocks.api.getProfile.mockResolvedValue({ profile: null });
+    mocks.api.getProfile.mockResolvedValue({ uid: 'u1', profileStatus: 'incomplete', profile: null });
     await continueWithGoogle();
     expect(mocks.signInWithPopup).toHaveBeenCalledWith(mocks.auth, expect.anything());
     expect(JSON.parse(sessionStorage.getItem('teamspeak.pending-profile')!)).toEqual({ nombre: 'Ana', apellido: 'Martínez' });
   });
 
   it('subscribes to token changes and enriches authenticated users', async () => {
-    mocks.api.getProfile.mockResolvedValue({ profile });
+    mocks.api.getProfile.mockResolvedValue({ uid: 'u1', profileStatus: 'complete', profile });
     const callback = vi.fn();
     subscribeToAuth(callback);
     const listener = mocks.onIdTokenChanged.mock.calls[0][1];
     await listener(null);
-    await listener(firebaseUser());
+    mocks.auth.currentUser = firebaseUser();
+    await listener(mocks.auth.currentUser);
     expect(callback).toHaveBeenNthCalledWith(1, null);
     expect(callback).toHaveBeenNthCalledWith(2, expect.objectContaining({ username: 'ana_martinez' }));
   });
 
   it('reuses the profile request across repeated token changes', async () => {
-    mocks.api.getProfile.mockResolvedValue({ profile });
+    mocks.api.getProfile.mockResolvedValue({ uid: 'u1', profileStatus: 'complete', profile });
     const callback = vi.fn();
     subscribeToAuth(callback);
     const listener = mocks.onIdTokenChanged.mock.calls[0][1];
     const user = firebaseUser();
 
+    mocks.auth.currentUser = user;
     await Promise.all([listener(user), listener(user)]);
 
     expect(mocks.api.getProfile).toHaveBeenCalledTimes(1);
-    expect(callback).toHaveBeenCalledTimes(2);
+    expect(callback).toHaveBeenCalledTimes(1);
   });
 
-  it('caches an absent profile and falls back to Firebase data on unexpected errors', async () => {
+  it.each([
+    [409, 'PROFILE_INCONSISTENT'], [404, 'PROFILE_NOT_FOUND'], [403, 'EMAIL_NOT_VERIFIED'],
+    [403, 'ACCOUNT_DELETION_BLOCKED'], [503, 'FIRESTORE_UNAVAILABLE'], [503, 'AUTH_UNAVAILABLE'],
+  ])('does not treat %s %s as onboarding and recovers on refresh', async (status, code) => {
     const user = firebaseUser();
+    mocks.auth.currentUser = user;
     mocks.signInWithEmailAndPassword.mockResolvedValue({ user });
-    mocks.api.getProfile.mockRejectedValueOnce(new ApiError(404, { success: false, code: 'NOT_FOUND', message: 'profile missing' }));
-    await expect(loginUser({ email: 'ana@test.edu', password: 'secret1' })).resolves.toMatchObject({ user: { id: 'u1' } });
-
-    const callback = vi.fn();
-    subscribeToAuth(callback);
-    const listener = mocks.onIdTokenChanged.mock.calls[0][1];
-    await listener(user);
-    expect(mocks.api.getProfile).toHaveBeenCalledTimes(1);
-
-    clearAuthProfileCache();
-    mocks.api.getProfile.mockRejectedValueOnce(new Error('network'));
-    await listener(user);
-    expect(callback).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'u1', name: 'Ana' }));
+    mocks.api.getProfile.mockRejectedValueOnce(new ApiError(status, { success: false, code, message: 'failed' }))
+      .mockResolvedValueOnce({ uid: 'u1', profileStatus: 'complete', profile });
+    await expect(loginUser({ email: user.email, password: 'demo' })).resolves.toMatchObject({ user: { profileError: code } });
+    await expect(refreshProfile('u1')).resolves.toMatchObject({ user: { username: profile.username } });
   });
 
-  it('clears the cached profile when logging out', async () => {
+  it('rejects AUTH_INVALID and keeps a recurring Google username', async () => {
     const user = firebaseUser();
-    mocks.api.getProfile.mockResolvedValue({ profile });
+    mocks.auth.currentUser = user;
+    mocks.signInWithPopup.mockResolvedValue({ user });
+    mocks.api.getProfile.mockRejectedValueOnce(new ApiError(401, { success: false, code: 'AUTH_INVALID', message: 'expired' }))
+      .mockResolvedValueOnce({ uid: 'u1', profileStatus: 'complete', profile });
+    await expect(continueWithGoogle()).rejects.toMatchObject({ code: 'AUTH_INVALID' });
+    await expect(continueWithGoogle()).resolves.toMatchObject({ user: { username: profile.username } });
+    expect(sessionStorage.getItem('teamspeak.pending-profile')).toBeNull();
+  });
+
+  it.each(['logout', 'switch', 'unsubscribe', 'same UID'] as const)(
+    'ignores success and rejection from older work after %s', async scenario => {
+      const user = firebaseUser();
+      mocks.auth.currentUser = user;
+      let resolve!: (value: unknown) => void;
+      let reject!: (error: Error) => void;
+      mocks.api.getProfile.mockReturnValueOnce(new Promise((yes, no) => { resolve = yes; reject = no; }));
+      const callback = vi.fn();
+      const onIdentityChange = vi.fn();
+      const stop = subscribeToAuth(callback, onIdentityChange);
+      const listener = mocks.onIdTokenChanged.mock.calls[0][1];
+      const previous = listener(user);
+      const refresh = refreshProfile('u1').catch(error => error);
+      if (scenario === 'unsubscribe') stop();
+      else if (scenario === 'logout') {
+        await logoutUser();
+        mocks.auth.currentUser = null;
+        await listener(null);
+      } else {
+        const uid = scenario === 'switch' ? 'u2' : 'u1';
+        const next = firebaseUser({ uid });
+        const current = { ...profile, uid, username: 'new_username' };
+        mocks.auth.currentUser = next;
+        mocks.api.getProfile.mockResolvedValueOnce({ uid, profileStatus: 'complete', profile: current });
+        await listener(next);
+      }
+      if (scenario === 'switch') reject(new Error('late failure'));
+      else resolve({ uid: 'u1', profileStatus: 'complete', profile });
+      await previous;
+      await refresh;
+      if (scenario === 'unsubscribe') expect(callback).not.toHaveBeenCalled();
+      else if (scenario === 'logout') expect(callback.mock.calls).toEqual([[null]]);
+      else {
+        expect(onIdentityChange).toHaveBeenCalledOnce();
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(callback).toHaveBeenCalledWith(expect.objectContaining({ username: 'new_username' }));
+      }
+    },
+  );
+
+  it.each([
+    [409, 'PROFILE_INCONSISTENT'], [404, 'PROFILE_NOT_FOUND'], [403, 'ACCOUNT_DELETION_BLOCKED'],
+    [403, 'ACCOUNT_DELETION_PENDING'], [403, 'ACCOUNT_DELETED'], [503, 'FIRESTORE_UNAVAILABLE'],
+  ])('does not republish a complete profile after a refresh returns %s %s', async (status, code) => {
+    const user = firebaseUser();
+    mocks.auth.currentUser = user;
+    const confirmed = { uid: user.uid, profileStatus: 'complete', profile };
+    const failure = new ApiError(status, { success: false, code, message: 'profile unavailable' });
+    mocks.api.getProfile.mockResolvedValueOnce(confirmed).mockRejectedValueOnce(failure).mockResolvedValueOnce(confirmed);
     const callback = vi.fn();
     subscribeToAuth(callback);
     const listener = mocks.onIdTokenChanged.mock.calls[0][1];
     await listener(user);
-    await logoutUser();
+    expect(callback).toHaveBeenLastCalledWith(expect.objectContaining({ username: profile.username }));
+
+    await expect(refreshProfile(user.uid)).resolves.toMatchObject({
+      response: undefined, error: failure, user: { username: undefined, profileError: code },
+    });
     await listener(user);
+    expect(callback).toHaveBeenLastCalledWith(expect.objectContaining({ username: undefined, profileError: code }));
     expect(mocks.api.getProfile).toHaveBeenCalledTimes(2);
+
+    await expect(refreshProfile(user.uid)).resolves.toMatchObject({ user: { username: profile.username } });
+    await listener(user);
+    expect(callback.mock.lastCall?.[0]).not.toHaveProperty('profileError');
+    expect(mocks.api.getProfile).toHaveBeenCalledTimes(3);
+  });
+
+  it('ignores a pending write from an earlier account', async () => {
+    const user = firebaseUser();
+    mocks.auth.currentUser = user;
+    let finish!: (value: unknown) => void;
+    mocks.api.updateProfile.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const write = updateUserProfile({ nombre: 'Nombre anterior' });
+    const next = firebaseUser({ uid: 'u2' });
+    mocks.auth.currentUser = next;
+    const current = { ...profile, uid: next.uid, username: 'current_user' };
+    mocks.api.getProfile.mockResolvedValueOnce({ uid: next.uid, profileStatus: 'complete', profile: current });
+    await refreshProfile(next.uid);
+    finish({ uid: user.uid, profileStatus: 'complete', profile });
+    await expect(write).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    const callback = vi.fn();
+    subscribeToAuth(callback);
+    await mocks.onIdTokenChanged.mock.calls[0][1](next);
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({ id: next.uid, username: current.username }));
+  });
+
+  it('does not invalidate a confirmed write when an older GET rejects', async () => {
+    const user = firebaseUser();
+    mocks.auth.currentUser = user;
+    let fail!: (error: Error) => void;
+    mocks.api.getProfile.mockReturnValueOnce(new Promise((_, reject) => { fail = reject; }));
+    const read = refreshProfile(user.uid);
+    const updated = { ...profile, username: 'new_username' };
+    mocks.api.updateProfile.mockResolvedValueOnce({ uid: user.uid, profileStatus: 'complete', profile: updated });
+    await updateUserProfile({ username: updated.username });
+    fail(new ApiError(409, { success: false, code: 'PROFILE_INCONSISTENT', message: 'old response' }));
+    await expect(read).resolves.toMatchObject({ response: { profile: updated } });
+  });
+
+  it('does not overwrite a confirmed write with an older GET', async () => {
+    const user = firebaseUser();
+    mocks.auth.currentUser = user;
+    let resolve!: (value: unknown) => void;
+    mocks.api.getProfile.mockReturnValueOnce(new Promise(yes => { resolve = yes; }));
+    const read = refreshProfile('u1');
+    const updated = { ...profile, username: 'new_username' };
+    mocks.api.updateProfile.mockResolvedValue({ uid: 'u1', profileStatus: 'complete', profile: updated });
+    await updateUserProfile({ username: updated.username });
+    resolve({ uid: 'u1', profileStatus: 'complete', profile });
+    await expect(read).resolves.toMatchObject({ response: { profile: updated } });
   });
 
   it('completes and updates profiles, then removes pending data', async () => {
     const user = firebaseUser();
     mocks.auth.currentUser = user;
     sessionStorage.setItem('teamspeak.pending-profile', JSON.stringify({ nombre: 'Ana', apellido: 'M' }));
-    mocks.api.createProfile.mockResolvedValue({ profile });
-    mocks.api.updateProfile.mockResolvedValue({ profile });
+    mocks.api.createProfile.mockResolvedValue({ uid: 'u1', profileStatus: 'complete', profile });
+    mocks.api.updateProfile.mockResolvedValue({ uid: user.uid, profileStatus: 'complete', profile });
     await expect(completeProfile('ana_martinez')).resolves.toMatchObject({ user: { username: 'ana_martinez' } });
     expect(sessionStorage.getItem('teamspeak.pending-profile')).toBeNull();
     await expect(updateUserProfile({ nombre: 'Ana' })).resolves.toMatchObject({ user: { name: 'Ana' } });

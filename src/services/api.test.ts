@@ -96,6 +96,23 @@ describe('API client contract', () => {
     expect(fetch.mock.calls[1][1].headers.get('Authorization')).toBe('Bearer fresh-token');
   });
 
+  it('does not retry a profile write after the Firebase session changes', async () => {
+    const previous = auth.currentUser;
+    const next = { getIdToken: vi.fn().mockResolvedValue('other-token') };
+    const fetch = vi.fn().mockImplementation(async () => {
+      auth.currentUser = next;
+      return { ok: false, status: 401, json: async () => ({ success: false, code: 'AUTH_INVALID' }) };
+    });
+    vi.stubGlobal('fetch', fetch);
+    try {
+      await expect(api.updateProfile({ nombre: 'Prueba' })).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(next.getIdToken).not.toHaveBeenCalled();
+    } finally {
+      auth.currentUser = previous;
+    }
+  });
+
   it('clears the Firebase session after a second authentication failure', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ success: false, code: 'AUTH_INVALID', message: 'expired' }) });
     vi.stubGlobal('fetch', fetch);

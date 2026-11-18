@@ -2,15 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { AccessibilityPage, EmailVerificationPage, HelpPage, LoggedOutPage, NotFoundPage, ProfilePage, RecoveryPage } from './PlaceholderPages';
+import { AccessibilityPage, EmailVerificationPage, HelpPage, LoggedOutPage, NotFoundPage, RecoveryPage } from './PlaceholderPages';
 
 const mocks = vi.hoisted(() => ({
   setUser: vi.fn(),
   refreshCurrentUser: vi.fn(),
   resendVerification: vi.fn(),
   resetPassword: vi.fn(),
-  updateUserProfile: vi.fn(),
-  deleteUserAccount: vi.fn(),
 }));
 const user = { id: 'u1', name: 'Ana', apellido: 'Martínez', username: 'ana_user', email: 'ana@test.edu', avatarUrl: null, emailVerified: false };
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user, setUser: mocks.setUser }) }));
@@ -19,8 +17,6 @@ vi.mock('../services/auth', () => ({
   refreshCurrentUser: mocks.refreshCurrentUser,
   resendVerification: mocks.resendVerification,
   resetPassword: mocks.resetPassword,
-  updateUserProfile: mocks.updateUserProfile,
-  deleteUserAccount: mocks.deleteUserAccount,
   completeProfile: vi.fn(),
 }));
 vi.mock('../services/api', () => ({ ApiError: class ApiError extends Error {}, api: {} }));
@@ -86,22 +82,5 @@ describe('PlaceholderPages', () => {
     fireEvent.change(screen.getByLabelText('Correo electrónico'), { target: { value: 'ana@test.edu' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enviar enlace' }));
     expect(await screen.findByRole('status')).toHaveTextContent('No disponible');
-  });
-
-  it('updates profile data and confirms account deletion', async () => {
-    mocks.updateUserProfile.mockResolvedValue({ user: { ...user, name: 'Ana María' } });
-    mocks.deleteUserAccount.mockResolvedValue(undefined);
-    renderPage(<ProfilePage />);
-    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Ana María' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Perfil actualizado');
-    expect(mocks.setUser).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Eliminar cuenta' }));
-    expect(screen.getByRole('dialog', { name: '¿Eliminar tu cuenta?' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Eliminar cuenta' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Sí, eliminar cuenta' }));
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login'));
   });
 });
