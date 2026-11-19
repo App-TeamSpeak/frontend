@@ -1,12 +1,15 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
-import { ApiError } from '../services/api';
+import { api, ApiError } from '../services/api';
 import { ProfilePage } from './ProfilePage';
 
-const mocks = vi.hoisted(() => ({ setUser: vi.fn(), getProfile: vi.fn(), update: vi.fn() }));
-vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1' }, setUser: mocks.setUser }) }));
-vi.mock('../services/auth', () => ({ AuthError: class extends Error {}, refreshProfile: mocks.getProfile, updateUserProfile: mocks.update }));
+const mocks = vi.hoisted(() => ({ setUser: vi.fn(), getProfile: vi.fn(), update: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), firebaseDelete: vi.fn(), signOut: vi.fn() }));
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1' }, setUser: mocks.setUser, logout: mocks.logout }) }));
+vi.mock('../services/auth', () => ({ AuthError: class extends Error {}, refreshProfile: mocks.getProfile, updateUserProfile: mocks.update, deleteUserAccount: mocks.deleteAccount, logoutUser: mocks.logout }));
+vi.mock('firebase/auth', async importOriginal => ({
+  ...await importOriginal<typeof import('firebase/auth')>(), deleteUser: mocks.firebaseDelete, signOut: mocks.signOut,
+}));
 const profile = { uid: 'u1', nombre: 'Ana', apellido: 'Pérez', username: 'ana_perez', email: 'ana@example.test', avatarUrl: null };
 const response = { uid: 'u1', profileStatus: 'complete', profile };
 function openProfile() { return render(<RouterProvider router={createMemoryRouter([{ path: "/", element: <ProfilePage /> }])} />); }
@@ -183,12 +186,43 @@ describe('US-04', () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it('keeps account deletion visible and unavailable', async () => {
-    openProfile();
-    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
-    expect(screen.getByRole('dialog', { name: '¿Eliminar tu cuenta?' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sí, eliminar cuenta' })).toBeDisabled();
-    click('Cancelar');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+describe('US-05', () => {
+  it('confirma, cancela y reinicia el diálogo sin operaciones destructivas ni cierre de sesión', async () => {
+    const deleteProfile = vi.spyOn(api, 'deleteProfile').mockResolvedValue({ status: 'pending' });
+    try {
+      openProfile();
+      const entry = await screen.findByRole('button', { name: 'Eliminar cuenta' });
+      fireEvent.click(entry);
+      expect(screen.getByRole('dialog', { name: 'Eliminar cuenta' })).toHaveAccessibleDescription(/todavía no está disponible/);
+      expect(screen.getByText(/perderás el acceso a TeamSpeak/)).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Cancelar' })).toHaveFocus();
+      const confirmation = screen.getByRole('checkbox', { name: /Entiendo las consecuencias/ });
+      const destructive = screen.getByRole('button', { name: 'Eliminar mi cuenta' });
+      expect(confirmation).not.toBeChecked();
+      fireEvent.click(confirmation);
+      expect(confirmation).toBeChecked();
+      expect(destructive).toBeDisabled();
+      fireEvent.click(destructive);
+      fireEvent.click(confirmation);
+      expect(confirmation).not.toBeChecked();
+      fireEvent.click(confirmation);
+      click('Cancelar');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(entry).toHaveFocus();
+      fireEvent.click(entry);
+      expect(confirmation).not.toBeChecked();
+      click('Cancelar');
+      expect(screen.getByText(profile.email)).toBeVisible();
+      expect(mocks.update).not.toHaveBeenCalled();
+      expect(deleteProfile).not.toHaveBeenCalled();
+      expect(mocks.deleteAccount).not.toHaveBeenCalled();
+      expect(mocks.firebaseDelete).not.toHaveBeenCalled();
+      expect(mocks.logout).not.toHaveBeenCalled();
+      expect(mocks.signOut).not.toHaveBeenCalled();
+    } finally {
+      deleteProfile.mockRestore();
+    }
   });
 });

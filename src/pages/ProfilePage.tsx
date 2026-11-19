@@ -1,3 +1,4 @@
+import { AccountDeletionDialog } from '../components/AccountDeletionDialog';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useBlocker } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -82,9 +83,7 @@ function ProfileContent({ uid }: { uid: string }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const avatarOptions = useRef<HTMLDetailsElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
-  const deleteButton = useRef<HTMLButtonElement>(null);
   const discardDialog = useRef<HTMLDialogElement>(null);
-  const deleteDialog = useRef<HTMLDialogElement>(null);
   const active = useRef(false);
 
   useEffect(() => {
@@ -315,11 +314,7 @@ function ProfileContent({ uid }: { uid: string }) {
           <p>Administra tu perfil y controla las acciones importantes.</p>
           {editing && <p className="user-profile-private">Tus datos son privados</p>}
         </div>
-        {profile && !editing && <button ref={deleteButton} className="button room-management-dialog-danger" type="button"
-          onClick={() => {
-            deleteDialog.current?.showModal();
-            deleteDialog.current?.querySelector<HTMLButtonElement>('button')?.focus();
-          }}>Eliminar cuenta</button>}
+        {profile && !editing && <AccountDeletionDialog />}
       </div>
     </div>
     <dialog className="room-management-dialog user-profile-dialog user-profile-discard" ref={discardDialog}
@@ -333,15 +328,6 @@ function ProfileContent({ uid }: { uid: string }) {
       <div className="room-management-dialog-actions">
         <button className="button secondary" type="button" onClick={() => discardDialog.current?.close('keep')}>Seguir editando</button>
         <button className="button room-management-dialog-danger" type="button" onClick={endEditing}>Descartar</button>
-      </div>
-    </dialog>
-    <dialog className="room-management-dialog user-profile-dialog" ref={deleteDialog}
-      aria-labelledby="profile-delete-title" onClose={() => deleteButton.current?.focus()}>
-      <h2 id="profile-delete-title">¿Eliminar tu cuenta?</h2>
-      <p>La eliminación de cuentas aún no está disponible.</p>
-      <div className="room-management-dialog-actions">
-        <button className="button secondary" type="button" onClick={() => deleteDialog.current?.close()}>Cancelar</button>
-        <button className="button room-management-dialog-danger" type="button" disabled>Sí, eliminar cuenta</button>
       </div>
     </dialog>
   </section>;

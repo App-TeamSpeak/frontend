@@ -297,3 +297,60 @@ test('un perfil previamente confirmado pierde acceso privado y recupera el dashb
   await page.getByRole('navigation', { name: 'Navegación del panel' }).getByRole('link', { name: 'Mis salas' }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
 });
+
+test('US-05 confirma y cancela desde el perfil sin enviar DELETE ni cerrar sesión', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  const { enableLoad } = await stubProfile(page);
+  enableLoad();
+  const deletions: string[] = [];
+  await page.route('**/api/users/me', async route => {
+    if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
+    deletions.push(route.request().url());
+    await route.abort();
+  });
+  await page.goto('/perfil');
+  if (!mobile) await expect(page.getByRole('heading', { name: 'Configuración de cuenta' })).toBeVisible();
+  const entry = page.getByRole('button', { name: 'Eliminar cuenta', exact: true });
+  await entry.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  const cancel = dialog.getByRole('button', { name: 'Cancelar' });
+  const check = dialog.getByRole('checkbox', { name: /Entiendo las consecuencias/ });
+  const destructive = dialog.getByRole('button', { name: 'Eliminar mi cuenta' });
+  await expect(dialog).toHaveAccessibleDescription(/todavía no está disponible/);
+  await expect(cancel).toBeFocused();
+  await expect(check).not.toBeChecked();
+  await page.screenshot({ path: info.outputPath('us05-confirmacion.png'), scale: 'css' });
+  await page.keyboard.press('Shift+Tab');
+  await expect(check).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(check).toBeChecked();
+  await page.keyboard.press('Tab');
+  await expect(cancel).toBeFocused();
+  await expect(destructive).toBeDisabled();
+  await page.screenshot({ path: info.outputPath('us05-confirmacion-marcada.png'), scale: 'css' });
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(entry).toBeFocused();
+  await expect(page.getByText(initial.email)).toBeVisible();
+  await entry.click();
+  await expect(check).not.toBeChecked();
+  await cancel.click();
+  await expect(entry).toBeFocused();
+
+  await entry.click();
+  await check.check();
+  await page.evaluate(() => window.dispatchEvent(new Event('teamspeak-test-switch')));
+  await expect(page.getByText('second@example.test')).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await entry.click();
+  await expect(check).not.toBeChecked();
+  await check.check();
+  await expect(destructive).toBeDisabled();
+  await cancel.click();
+  await expect(page).toHaveURL(/\/perfil$/);
+  await expect(page.getByText('second@example.test')).toBeVisible();
+  expect(deletions).toEqual([]);
+});

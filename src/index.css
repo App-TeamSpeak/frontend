@@ -315,13 +315,18 @@ button:not(:disabled), .button { cursor: pointer; }
 .room-management-dialog-delete .room-management-dialog-actions .button { min-height: 44px; height: 44px; padding: 12px 16px; border-radius: 8px; }
 .room-management-dialog-delete .room-management-dialog-actions .secondary { width: 120px; border: 2px solid var(--link); color: var(--text); }
 .room-management-dialog-delete .room-management-dialog-danger { width: 148px; min-height: 44px; border-color: var(--error-strong); background: var(--danger-action); }
-.profile-delete-dialog { width: min(360px, calc(100vw - 32px)); min-height: 0; padding: 24px; border-radius: 16px; }
-.profile-delete-dialog h2 { font-size: 22px; line-height: 28px; }
-.profile-delete-dialog > p { margin-top: 10px; font-size: 14px; line-height: 20px; }
-.profile-delete-dialog .room-management-dialog-actions { margin-top: 24px; gap: 10px; }
-.profile-delete-dialog .room-management-dialog-actions .button { min-height: 42px; height: 42px; padding: 10px 14px; }
-.profile-delete-dialog .room-management-dialog-actions .secondary { width: 102px; }
-.profile-delete-dialog .room-management-dialog-danger { width: 146px; }
+.profile-delete-dialog { width: min(500px, calc(100% - 40px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 32px; border-color: var(--error-strong); border-radius: 20px; }
+.profile-delete-dialog h2 { font-size: 26px; line-height: 32px; }
+.profile-delete-dialog > p { margin-top: 16px; color: var(--muted); }
+.profile-delete-confirmation { display: flex; align-items: center; gap: 12px; margin-top: 24px; padding: 14px 16px; min-height: 58px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-soft); color: var(--text); cursor: pointer; }
+.profile-delete-confirmation input { flex: 0 0 auto; appearance: auto; width: 20px; height: 20px; accent-color: var(--primary); }
+.profile-delete-confirmation input:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
+.profile-delete-dialog .profile-delete-availability { padding: 12px; border: 1px solid var(--border); border-radius: 9px; }
+.profile-delete-dialog .room-management-dialog-actions .button { flex: 1; min-width: 0; min-height: 44px; padding: 8px; text-align: center; }
+@media (max-width: 767px) {
+  .profile-delete-dialog { padding: 24px 20px; }
+  .profile-delete-dialog h2 { font-size: 24px; }
+}
 .room-management-dialog-edit { width: min(500px, 100%); min-height: 430px; padding: 28px 32px 20px; border-radius: 20px; }
 .room-management-dialog-edit h2 { font-size: 26px; line-height: 32px; }
 .room-management-dialog-description { margin-top: 12px; color: var(--muted); font-size: 15px; line-height: 21px; }
