@@ -71,7 +71,7 @@ describe('API client contract', () => {
     await api.getProfile();
     await api.createProfile({ nombre: 'Ana', apellido: 'M', username: 'ana_user' });
     await api.updateProfile({ nombre: 'Ana' });
-    await api.deleteProfile();
+    await api.deleteProfile('a'.repeat(64));
     await api.listRooms();
     await api.getRoom('room-1');
     await api.updateRoom('room-1', { name: 'Nueva' });
@@ -100,22 +100,24 @@ describe('API client contract', () => {
       json: async () => ({ success: false, code: 'AUTH_RECENT_REQUIRED', message: 'Confirma tu identidad' }),
     });
     vi.stubGlobal('fetch', fetch);
-    await expect(api.deleteProfile()).rejects.toMatchObject({ code: 'AUTH_RECENT_REQUIRED' });
+    await expect(api.deleteProfile('a'.repeat(64))).rejects.toMatchObject({ code: 'AUTH_RECENT_REQUIRED' });
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'DELETE' });
     expect(fetch.mock.calls[0][1].body).toBeUndefined();
+    expect(fetch.mock.calls[0][1].headers.get('Authorization')).toMatch(/^Bearer /);
+    expect(fetch.mock.calls[0][1].headers.get('X-Deletion-Status-Token')).toBe('a'.repeat(64));
     expect(signOut).not.toHaveBeenCalled();
   });
 
-  it('accepts HTTP 202 only as a pending receipt with status token', async () => {
+  it('accepts HTTP 202 with or without a response token', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true, status: 202, json: async () => ({ success: true, data: { status: 'pending' } }),
     }));
-    await expect(api.deleteProfile()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    await expect(api.deleteProfile('a'.repeat(64))).resolves.toEqual({ status: 'pending' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true, status: 202, json: async () => ({ success: true, data: { status: 'pending', statusToken: 'fixture' } }),
     }));
-    await expect(api.deleteProfile()).resolves.toEqual({ status: 'pending', statusToken: 'fixture' });
+    await expect(api.deleteProfile('a'.repeat(64))).resolves.toEqual({ status: 'pending', statusToken: 'fixture' });
   });
 
   it.each(['none', 'pending', 'blocked', 'completed'])('reads deletion status %s with the token only in the header', async status => {

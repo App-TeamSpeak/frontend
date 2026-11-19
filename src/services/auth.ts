@@ -275,7 +275,7 @@ export async function reauthenticateForDeletion(user: User, provider: 'password'
   }
 }
 
-export async function deleteUserAccount() {
+export async function deleteUserAccount(token: string) {
   const user = firebaseAuth.currentUser;
   if (!user) throw new AuthError('AUTH_REQUIRED', 'Inicia sesión para continuar.');
   const expected = currentSession(user);
@@ -284,7 +284,7 @@ export async function deleteUserAccount() {
   try {
     let result: Awaited<ReturnType<typeof api.deleteProfile>>;
     try {
-      result = await api.deleteProfile(AbortSignal.timeout(20_000));
+      result = await api.deleteProfile(token, AbortSignal.timeout(20_000));
     } catch (error) {
       if (firebaseAuth.currentUser) assertSession(expected);
       if (error instanceof ApiError && error.status >= 400 && error.status < 500 &&
@@ -292,7 +292,7 @@ export async function deleteUserAccount() {
       throw new AuthError('ACCOUNT_DELETION_UNKNOWN', 'No pudimos confirmar la eliminación. Evita repetir la solicitud.');
     }
     if (firebaseAuth.currentUser) assertSession(expected);
-    if (!result?.statusToken || (result.status !== 'pending' && result.status !== 'completed')) {
+    if (result?.status !== 'pending' && result?.status !== 'completed') {
       throw new AuthError('ACCOUNT_DELETION_UNKNOWN', 'No pudimos confirmar la eliminación. Evita repetir la solicitud.');
     }
     return result;

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
 const authMocks = vi.hoisted(() => ({
+  currentFirebaseUser: () => null,
   configureAuth: vi.fn().mockResolvedValue(undefined),
   subscribeToAuth: vi.fn(),
   logoutUser: vi.fn().mockResolvedValue(undefined),

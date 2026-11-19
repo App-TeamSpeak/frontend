@@ -329,15 +329,14 @@ describe('auth service', () => {
   it('returns the definitive receipt for the UI to coordinate logout', async () => {
     mocks.auth.currentUser = firebaseUser();
     mocks.api.deleteProfile.mockResolvedValueOnce({ status: 'completed', statusToken: 'fixture' });
-    await expect(deleteUserAccount()).resolves.toMatchObject({ status: 'completed' });
+    await expect(deleteUserAccount('a'.repeat(64))).resolves.toMatchObject({ status: 'completed' });
     expect(mocks.api.deleteProfile).toHaveBeenCalledOnce();
     expect(mocks.signOut).not.toHaveBeenCalled();
   });
-  it.each(['pending', 'network', 'timeout'])('preserva la sesión ante resultado incierto: %s', async outcome => {
+  it.each(['network', 'timeout'])('preserva la sesión ante resultado incierto: %s', async outcome => {
     mocks.auth.currentUser = firebaseUser();
-    if (outcome === 'pending') mocks.api.deleteProfile.mockResolvedValueOnce({ status: 'pending' });
-    else mocks.api.deleteProfile.mockRejectedValueOnce(outcome === 'timeout' ? new DOMException('Timeout', 'TimeoutError') : new TypeError('offline'));
-    await expect(deleteUserAccount()).rejects.toMatchObject({ code: 'ACCOUNT_DELETION_UNKNOWN' });
+    mocks.api.deleteProfile.mockRejectedValueOnce(outcome === 'timeout' ? new DOMException('Timeout', 'TimeoutError') : new TypeError('offline'));
+    await expect(deleteUserAccount('a'.repeat(64))).rejects.toMatchObject({ code: 'ACCOUNT_DELETION_UNKNOWN' });
     expect(mocks.api.deleteProfile).toHaveBeenCalledOnce();
     expect(mocks.signOut).not.toHaveBeenCalled();
   });
@@ -346,8 +345,8 @@ describe('auth service', () => {
     mocks.auth.currentUser = firebaseUser();
     let finish!: (value: { status: string; statusToken: string }) => void;
     mocks.api.deleteProfile.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
-    const pending = expect(deleteUserAccount()).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
-    await expect(deleteUserAccount()).rejects.toMatchObject({ code: 'ACCOUNT_DELETION_IN_PROGRESS' });
+    const pending = expect(deleteUserAccount('a'.repeat(64))).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    await expect(deleteUserAccount('a'.repeat(64))).rejects.toMatchObject({ code: 'ACCOUNT_DELETION_IN_PROGRESS' });
     mocks.auth.currentUser = firebaseUser({ uid: 'u2' });
     finish({ status: 'completed', statusToken: 'fixture' });
     await pending;
@@ -357,8 +356,8 @@ describe('auth service', () => {
 
   it('preserves the session and returns the pending receipt', async () => {
     mocks.auth.currentUser = firebaseUser();
-    mocks.api.deleteProfile.mockResolvedValueOnce({ status: 'pending', statusToken: 'fixture' });
-    await expect(deleteUserAccount()).resolves.toEqual({ status: 'pending', statusToken: 'fixture' });
+    mocks.api.deleteProfile.mockResolvedValueOnce({ status: 'pending' });
+    await expect(deleteUserAccount('a'.repeat(64))).resolves.toEqual({ status: 'pending' });
     expect(mocks.signOut).not.toHaveBeenCalled();
   });
 
@@ -451,7 +450,7 @@ describe('auth service', () => {
       mocks.auth.currentUser = null;
       return { status: 'completed', statusToken: 'fixture' };
     });
-    await expect(deleteUserAccount()).resolves.toMatchObject({ status: 'completed' });
+    await expect(deleteUserAccount('a'.repeat(64))).resolves.toMatchObject({ status: 'completed' });
     expect(mocks.signOut).not.toHaveBeenCalled();
   });
 

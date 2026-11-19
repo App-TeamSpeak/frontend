@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import { AccountDeletionProvider } from '../components/AccountDeletionDialog';
+import { readDeletionTracking } from '../services/deletionTracking';
 import { ProfilePage } from './ProfilePage';
 import { ProfileEmailChange } from '../components/ProfileEmailChange';
 
@@ -29,6 +30,7 @@ function error(status: number, code: string) { return new ApiError(status, { suc
 
 beforeEach(() => {
   vi.resetAllMocks();
+  sessionStorage.clear();
   mocks.canChangeEmail = undefined;
   mocks.identity = { uid: 'u1', providerData: [{ providerId: 'password' }] };
   mocks.signedOut = false;
@@ -240,7 +242,12 @@ describe('US-05', () => {
   });
 
   it('espera completed por token, conserva sesión en pending y navega al login', async () => {
-    mocks.deleteAccount.mockResolvedValueOnce({ status: 'pending', statusToken: 'fixture-receipt' });
+    const entropy = vi.spyOn(crypto, 'getRandomValues');
+    mocks.deleteAccount.mockImplementationOnce(async token => {
+      expect(token).toMatch(/^[A-Za-z0-9_-]{64}$/);
+      expect(readDeletionTracking('u1')?.token).toBe(token);
+      return { status: 'pending' };
+    });
     const status = vi.spyOn(api, 'getDeletionStatus').mockResolvedValueOnce({ status: 'completed' });
     try {
       openProfile();
@@ -251,11 +258,14 @@ describe('US-05', () => {
       expect(mocks.logout).not.toHaveBeenCalled();
       click('Consultar estado');
       expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
-      expect(status).toHaveBeenCalledWith('fixture-receipt', expect.any(AbortSignal));
+      expect(entropy).toHaveBeenCalledWith(expect.any(Uint8Array));
+      expect(status).toHaveBeenCalledWith(mocks.deleteAccount.mock.calls[0][0], expect.any(AbortSignal));
+      expect(readDeletionTracking('u1')).toBeNull();
       expect(mocks.deleteAccount).toHaveBeenCalledOnce();
       expect(mocks.logout).toHaveBeenCalledOnce();
       expect(mocks.setUser).toHaveBeenCalledWith(null);
     } finally {
+      entropy.mockRestore();
       status.mockRestore();
     }
   });
@@ -361,9 +371,10 @@ describe('US-05', () => {
     expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
     expect(mocks.reauthenticateDeletion).toHaveBeenLastCalledWith(mocks.identity, 'password', 'fixture-password');
     expect(mocks.deleteAccount).toHaveBeenCalledTimes(2);
+    expect(mocks.deleteAccount.mock.calls[0][0]).toBe(mocks.deleteAccount.mock.calls[1][0]);
   });
 
-  it('usa Bearer tras una respuesta perdida y muestra bloqueo sin repetir DELETE', async () => {
+  it('usa el comprobante tras una respuesta perdida y muestra bloqueo sin repetir DELETE', async () => {
     mocks.deleteAccount.mockRejectedValueOnce(new Error('respuesta perdida'));
     const status = vi.spyOn(api, 'getDeletionStatus').mockResolvedValueOnce({ status: 'blocked' });
     try {
@@ -374,7 +385,7 @@ describe('US-05', () => {
       expect(await screen.findByText('El resultado de la eliminación sigue sin confirmarse.')).toBeVisible();
       click('Consultar estado');
       expect(await screen.findByText('El proceso está bloqueado. Contacta a soporte.')).toBeVisible();
-      expect(status).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
+      expect(status).toHaveBeenCalledWith(mocks.deleteAccount.mock.calls[0][0], expect.any(AbortSignal));
       expect(mocks.deleteAccount).toHaveBeenCalledOnce();
       expect(mocks.logout).not.toHaveBeenCalled();
     } finally {
@@ -382,6 +393,69 @@ describe('US-05', () => {
     }
   });
 
+
+  it('recupera tras recargar sin Firebase y vuelve a consultar luego de un fallo temporal', async () => {
+    mocks.deleteAccount.mockRejectedValueOnce(new TypeError('offline'));
+    const status = vi.spyOn(api, 'getDeletionStatus')
+      .mockRejectedValueOnce(new TypeError('offline'))
+      .mockResolvedValueOnce({ status: 'completed' });
+    try {
+      const page = openProfile();
+      fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+      fireEvent.click(screen.getByRole('checkbox'));
+      click('Eliminar mi cuenta');
+      await screen.findByText(/el resultado de la eliminación sigue sin confirmarse/i);
+      const token = mocks.deleteAccount.mock.calls[0][0];
+      page.unmount();
+      mocks.signedOut = true;
+      openProfile();
+      click('Ver seguimiento de eliminación');
+      click('Consultar estado');
+      await screen.findByText(/no pudimos comprobar el estado/i);
+      click('Consultar estado');
+      await screen.findByRole('heading', { name: 'Iniciar sesión' });
+      expect(status.mock.calls.map(([receipt]) => receipt)).toEqual([token, token]);
+      expect(readDeletionTracking('u1')).toBeNull();
+      expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+      expect(mocks.logout).not.toHaveBeenCalled();
+    } finally {
+      status.mockRestore();
+    }
+  });
+
+  it('conserva el comprobante ante discrepancia y 404 sin indicar éxito', async () => {
+    mocks.deleteAccount.mockRejectedValueOnce(error(409, 'DELETION_STATUS_TOKEN_MISMATCH'));
+    const status = vi.spyOn(api, 'getDeletionStatus').mockRejectedValueOnce(error(404, 'DELETION_STATUS_NOT_FOUND'));
+    try {
+      openProfile();
+      fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+      fireEvent.click(screen.getByRole('checkbox'));
+      click('Eliminar mi cuenta');
+      await screen.findByText(/solicitud existente tiene otro comprobante/);
+      click('Consultar estado');
+      await screen.findByText(/estado no se pudo verificar/);
+      const token = mocks.deleteAccount.mock.calls[0][0];
+      expect(status).toHaveBeenCalledWith(token, expect.any(AbortSignal));
+      expect(readDeletionTracking('u1')?.token).toBe(token);
+      expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+      expect(mocks.logout).not.toHaveBeenCalled();
+    } finally {
+      status.mockRestore();
+    }
+  });
+
+  it('muestra VALIDATION_ERROR y vuelve a requerir confirmación explícita', async () => {
+    mocks.deleteAccount.mockRejectedValueOnce(error(400, 'VALIDATION_ERROR'));
+    openProfile();
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    click('Eliminar mi cuenta');
+    await screen.findByText(/servidor rechazó la solicitud/);
+    expect(screen.getByRole('button', { name: 'Eliminar mi cuenta' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Consultar estado' })).not.toBeInTheDocument();
+    expect(readDeletionTracking('u1')).toBeNull();
+    expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+  });
 
   it('trata 409 ACCOUNT_DELETION_BLOCKED como bloqueo sin terminar la sesión', async () => {
     mocks.deleteAccount.mockRejectedValueOnce(error(409, 'ACCOUNT_DELETION_BLOCKED'));
