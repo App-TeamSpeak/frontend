@@ -1,3 +1,4 @@
+import { ProfileEmailChange } from '../components/ProfileEmailChange';
 import { AccountDeletionDialog } from '../components/AccountDeletionDialog';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useBlocker } from 'react-router-dom';
@@ -71,6 +72,7 @@ export function ProfilePage() {
 
 function ProfileContent({ uid }: { uid: string }) {
   const { user, setUser } = useAuth();
+  const [emailBusy, setEmailBusy] = useState(false);
   const [query, setQuery] = useState<Query>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -171,7 +173,7 @@ function ProfileContent({ uid }: { uid: string }) {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft || !profile || pending.current || saved) return;
+    if (!draft || !profile || pending.current || saved || emailBusy) return;
     const values: Draft = {
       nombre: draft.nombre.trim(), apellido: draft.apellido.trim(),
       username: draft.username.trim(), avatarUrl: draft.avatarUrl.trim(),
@@ -294,7 +296,7 @@ function ProfileContent({ uid }: { uid: string }) {
             <div className="user-profile-actions">
               {saved ? <button className="button primary" type="button" onClick={endEditing}>Volver al perfil</button> : <>
                 <button className="button secondary" ref={cancelButton} type="button" disabled={saving} onClick={cancel}>Cancelar</button>
-                <button className="button primary" type="submit" disabled={saving}>{saving ? 'Guardando…' : feedback ? 'Reintentar' : 'Guardar cambios'}</button>
+                <button className="button primary" type="submit" disabled={saving || emailBusy}>{saving ? 'Guardando…' : feedback ? 'Reintentar' : 'Guardar cambios'}</button>
               </>}
             </div>
           </form> : <dl className="user-profile-data">
@@ -302,6 +304,12 @@ function ProfileContent({ uid }: { uid: string }) {
             <div><dt>Nombre de usuario</dt><dd>{profile.username}</dd></div>
             <div><dt>Correo electrónico</dt><dd>{profile.email}</dd></div>
           </dl>}
+          <ProfileEmailChange uid={uid} email={profile.email} supported={user?.canChangeEmail} hidden={!editing || saving || saved}
+            onBusy={setEmailBusy} onConfirmed={result => {
+              if (!result.isCurrent()) return;
+              setQuery({ status: 'ready', profile: result.profile });
+              setUser(result.user);
+            }} />
           {!draft && <button type="button" className="button primary user-profile-edit" onClick={() => {
             setDraft(toDraft(profile));
             focusHeading();

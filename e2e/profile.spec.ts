@@ -6,7 +6,7 @@ const initial = {
   profileStatus: 'complete', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-async function stubProfile(page: Page, missingUsername = false, pendingOutcome?: 'success' | 'failure') {
+async function stubProfile(page: Page, missingUsername = false, pendingOutcome?: 'success' | 'failure', passwordLinked = false) {
   let profile = { ...initial };
   let failLoad = true;
   let profileError: { status: number; code: string } | undefined;
@@ -21,7 +21,7 @@ async function stubProfile(page: Page, missingUsername = false, pendingOutcome?:
   await page.route(/\/src\/firebase\.ts(\?.*)?$/, route => route.fulfill({
     contentType: 'application/javascript',
     body: `export const firebaseAuth = { currentUser: { uid: 'us04-test', email: 'maria@example.test',
-      emailVerified: true, getIdToken: async () => 'synthetic-id-token' } };
+      emailVerified: true, providerData: ${JSON.stringify(passwordLinked ? [{ providerId: 'password' }] : [])}, getIdToken: async () => 'synthetic-id-token' } };
       export const firebaseApp = {};
       export const assertFirebaseConfiguration = () => {};`,
   }));
@@ -318,9 +318,10 @@ test('US-05 confirma y cancela desde el perfil sin enviar DELETE ni cerrar sesi�
   const cancel = dialog.getByRole('button', { name: 'Cancelar' });
   const check = dialog.getByRole('checkbox', { name: /Entiendo las consecuencias/ });
   const destructive = dialog.getByRole('button', { name: 'Eliminar mi cuenta' });
-  await expect(dialog).toHaveAccessibleDescription(/todavía no está disponible/);
+  await expect(dialog).toHaveAccessibleDescription(/Esta acción es definitiva/);
   await expect(cancel).toBeFocused();
   await expect(check).not.toBeChecked();
+  await expect(destructive).toBeDisabled();
   await page.screenshot({ path: info.outputPath('us05-confirmacion.png'), scale: 'css' });
   await page.keyboard.press('Shift+Tab');
   await expect(check).toBeFocused();
@@ -328,7 +329,7 @@ test('US-05 confirma y cancela desde el perfil sin enviar DELETE ni cerrar sesi�
   await expect(check).toBeChecked();
   await page.keyboard.press('Tab');
   await expect(cancel).toBeFocused();
-  await expect(destructive).toBeDisabled();
+  await expect(destructive).toBeEnabled();
   await page.screenshot({ path: info.outputPath('us05-confirmacion-marcada.png'), scale: 'css' });
   expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.keyboard.press('Escape');
@@ -348,9 +349,121 @@ test('US-05 confirma y cancela desde el perfil sin enviar DELETE ni cerrar sesi�
   await entry.click();
   await expect(check).not.toBeChecked();
   await check.check();
-  await expect(destructive).toBeDisabled();
+  await expect(destructive).toBeEnabled();
   await cancel.click();
   await expect(page).toHaveURL(/\/perfil$/);
   await expect(page.getByText('second@example.test')).toBeVisible();
   expect(deletions).toEqual([]);
+});
+
+test('US-04 valida el nuevo correo y conserva el borrador ante EMAIL_TAKEN', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  const { enableLoad, patches } = await stubProfile(page, false, undefined, true);
+  enableLoad();
+  const attempts: unknown[] = [];
+  await page.route('**/api/users/me/email-change', async route => {
+    expect(route.request().method()).toBe('POST');
+    attempts.push(route.request().postDataJSON());
+    await route.fulfill({ status: 409, json: { success: false, code: 'EMAIL_TAKEN', message: 'El correo electrónico no está disponible.' } });
+  });
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Editar perfil' }).click();
+  await page.getByLabel('Nombre', { exact: true }).fill('Cambios sin guardar');
+  const address = page.getByLabel('Nuevo correo electrónico');
+  const send = page.getByRole('button', { name: 'Enviar verificación' });
+  await address.fill('inválido');
+  await send.click();
+  await expect(page.getByRole('alert')).toContainText('Introduce un correo electrónico válido');
+  expect(attempts).toEqual([]);
+  await address.fill('ocupado@example.test');
+  await send.click();
+  await expect(page.getByRole('alert')).toContainText('El correo electrónico no está disponible');
+  await expect(page.getByLabel('Nombre', { exact: true })).toHaveValue('Cambios sin guardar');
+  await expect(page.getByLabel('Correo electrónico', { exact: true })).toHaveValue(initial.email);
+  expect(attempts).toEqual([{ newEmail: 'ocupado@example.test' }]);
+  expect(patches).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath('us04-cambio-correo.png'), scale: 'css' });
+  await page.getByRole('button', { name: 'Cancelar cambio de correo' }).click();
+  await expect(address).toHaveValue('');
+  await expect(page.getByLabel('Nombre', { exact: true })).toHaveValue('Cambios sin guardar');
+});
+
+test('US-05 espera la confirmación por token y vuelve al login tras un solo DELETE', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  const { enableLoad } = await stubProfile(page);
+  enableLoad();
+  let deletions = 0;
+  let lookups = 0;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/users/me', async route => {
+    if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
+    deletions++;
+    expect(route.request().postData()).toBeNull();
+    await pending;
+    await route.fulfill({ status: 202, json: { success: true, data: { status: 'pending', statusToken: 'synthetic-receipt' } } });
+  });
+  await page.route('**/api/users/me/deletion-status', async route => {
+    if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204 }); return; }
+    lookups++;
+    expect(route.request().headers()['x-deletion-status-token']).toBe('synthetic-receipt');
+    expect(route.request().headers().authorization).toBeUndefined();
+    expect(new URL(route.request().url()).search).toBe('');
+    await route.fulfill({ json: { success: true, data: { status: 'completed' } } });
+  });
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Eliminar cuenta', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Eliminar mi cuenta' }).click();
+  await expect(dialog.getByText('Eliminando cuenta…')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+  await page.screenshot({ path: info.outputPath('us05-procesando.png'), scale: 'css' });
+  release();
+  await expect(dialog.getByText(/eliminación aún está pendiente/)).toBeVisible();
+  await expect(page).toHaveURL(/\/perfil$/);
+  await page.screenshot({ path: info.outputPath('us05-pendiente.png'), scale: 'css' });
+  await dialog.getByRole('button', { name: 'Consultar estado' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.auth-card').getByRole('status')).toHaveText('El servidor confirmó la eliminación de tu cuenta.');
+  expect(deletions).toBe(1);
+  expect(lookups).toBe(1);
+  await page.screenshot({ path: info.outputPath('us05-completada.png'), scale: 'css' });
+});
+
+test('US-05 trata un 503 como incierto y conserva una salida segura sin reenviar', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  const { enableLoad } = await stubProfile(page);
+  enableLoad();
+  let deletions = 0;
+  await page.route('**/api/users/me', async route => {
+    if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
+    deletions++;
+    await route.fulfill({ status: 503, json: { success: false, code: 'AUTH_UNAVAILABLE', message: 'No disponible' } });
+  });
+  await page.route('**/api/users/me/deletion-status', async route => {
+    if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204 }); return; }
+    expect(route.request().headers().authorization).toBe('Bearer synthetic-id-token');
+    await route.fulfill({ json: { success: true, data: { status: 'blocked' } } });
+  });
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Eliminar cuenta', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Eliminar mi cuenta' }).click();
+  await expect(dialog.getByText('El resultado de la eliminación sigue sin confirmarse.')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Consultar estado' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Contacta a soporte');
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath('us05-bloqueada.png'), scale: 'css' });
+  await dialog.getByRole('button', { name: 'Cerrar' }).click();
+  await expect(page).toHaveURL(/\/perfil$/);
+  await expect(page.getByText(initial.email)).toBeVisible();
+  expect(deletions).toBe(1);
 });

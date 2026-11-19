@@ -63,8 +63,8 @@ describe('API client contract', () => {
   });
 
   it('covers profile and room operations with their HTTP contracts', async () => {
-    const fetch = vi.fn().mockImplementation((url: string) => {
-      const data = url.endsWith('/api/rooms') ? [] : url.includes('/api/users/me') ? { uid: 'u1', profileStatus: 'complete', profile: null } : { id: 'room-1', name: 'Sala', ownerId: 'u1' };
+    const fetch = vi.fn().mockImplementation((url: string, options: RequestInit) => {
+      const data = options.method === 'DELETE' && url.endsWith('/api/users/me') ? { status: 'completed', statusToken: 'fixture' } : url.endsWith('/api/rooms') ? [] : url.includes('/api/users/me') ? { uid: 'u1', profileStatus: 'complete', profile: null } : { id: 'room-1', name: 'Sala', ownerId: 'u1' };
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true, data }) });
     });
     vi.stubGlobal('fetch', fetch);
@@ -93,8 +93,56 @@ describe('API client contract', () => {
     ]);
   });
 
+  it('sends one account DELETE without body and preserves the reauthentication error', async () => {
+    signOut.mockClear();
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false, status: 401,
+      json: async () => ({ success: false, code: 'AUTH_RECENT_REQUIRED', message: 'Confirma tu identidad' }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(api.deleteProfile()).rejects.toMatchObject({ code: 'AUTH_RECENT_REQUIRED' });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'DELETE' });
+    expect(fetch.mock.calls[0][1].body).toBeUndefined();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('accepts HTTP 202 only as a pending receipt with status token', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 202, json: async () => ({ success: true, data: { status: 'pending' } }),
+    }));
+    await expect(api.deleteProfile()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 202, json: async () => ({ success: true, data: { status: 'pending', statusToken: 'fixture' } }),
+    }));
+    await expect(api.deleteProfile()).resolves.toEqual({ status: 'pending', statusToken: 'fixture' });
+  });
+
+  it.each(['none', 'pending', 'blocked', 'completed'])('reads deletion status %s with the token only in the header', async status => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ success: true, data: { status } }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(api.getDeletionStatus('fixture')).resolves.toEqual({ status });
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toMatch(/\/api\/users\/me\/deletion-status$/);
+    expect(init.headers.get('X-Deletion-Status-Token')).toBe('fixture');
+    expect(init.headers.has('Authorization')).toBe(false);
+  });
+
+  it('preserves the recent auth error for email eligibility and sends only the new address', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false, status: 401, json: async () => ({ success: false, code: 'AUTH_RECENT_REQUIRED' }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(api.requestEmailChange('new@example.test')).rejects.toMatchObject({ code: 'AUTH_RECENT_REQUIRED' });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch.mock.calls[0][1].body).toBe(JSON.stringify({ newEmail: 'new@example.test' }));
+  });
+
   it('refreshes the token once after authentication failures', async () => {
     const getIdToken = auth.currentUser.getIdToken;
+    getIdToken.mockClear();
     getIdToken.mockResolvedValueOnce('stale-token').mockResolvedValueOnce('fresh-token').mockResolvedValueOnce('fresh-token');
     const fetch = vi.fn()
       .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ success: false, code: 'AUTH_INVALID', message: 'expired' }) })
