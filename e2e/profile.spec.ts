@@ -397,19 +397,23 @@ test('US-05 espera la confirmación por token y vuelve al login tras un solo DEL
   enableLoad();
   let deletions = 0;
   let lookups = 0;
+  let receipt: string;
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/users/me', async route => {
     if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
     deletions++;
     expect(route.request().postData()).toBeNull();
+    expect(route.request().headers().authorization).toBe('Bearer synthetic-id-token');
+    receipt = route.request().headers()['x-deletion-status-token'];
+    expect(receipt).toMatch(/^[A-Za-z0-9_-]{64}$/);
     await pending;
-    await route.fulfill({ status: 202, json: { success: true, data: { status: 'pending', statusToken: 'synthetic-receipt' } } });
+    await route.fulfill({ status: 202, json: { success: true, data: { status: 'pending' } } });
   });
   await page.route('**/api/users/me/deletion-status', async route => {
     if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204 }); return; }
     lookups++;
-    expect(route.request().headers()['x-deletion-status-token']).toBe('synthetic-receipt');
+    expect(route.request().headers()['x-deletion-status-token']).toBe(receipt);
     expect(route.request().headers().authorization).toBeUndefined();
     expect(new URL(route.request().url()).search).toBe('');
     await route.fulfill({ json: { success: true, data: { status: 'completed' } } });
@@ -449,7 +453,8 @@ test('US-05 trata un 503 como incierto y conserva una salida segura sin reenviar
   });
   await page.route('**/api/users/me/deletion-status', async route => {
     if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204 }); return; }
-    expect(route.request().headers().authorization).toBe('Bearer synthetic-id-token');
+    expect(route.request().headers().authorization).toBeUndefined();
+    expect(route.request().headers()['x-deletion-status-token']).toMatch(/^[A-Za-z0-9_-]{64}$/);
     await route.fulfill({ json: { success: true, data: { status: 'blocked' } } });
   });
   await page.goto('/perfil');
@@ -465,5 +470,55 @@ test('US-05 trata un 503 como incierto y conserva una salida segura sin reenviar
   await dialog.getByRole('button', { name: 'Cerrar' }).click();
   await expect(page).toHaveURL(/\/perfil$/);
   await expect(page.getByText(initial.email)).toBeVisible();
+  expect(deletions).toBe(1);
+});
+
+test('US-05 recupera una respuesta perdida tras recargar sin identidad Firebase', async ({ page }) => {
+  const { enableLoad } = await stubProfile(page);
+  enableLoad();
+  let deletions = 0;
+  let receipt: string;
+  await page.route('**/api/users/me', async route => {
+    if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
+    deletions++;
+    receipt = route.request().headers()['x-deletion-status-token'];
+    await route.abort('connectionreset');
+  });
+  await page.route('**/api/users/me/deletion-status', async route => {
+    if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204 }); return; }
+    expect(route.request().headers()['x-deletion-status-token']).toBe(receipt);
+    expect(route.request().headers().authorization).toBeUndefined();
+    await route.fulfill({ json: { success: true, data: { status: 'completed' } } });
+  });
+
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Eliminar cuenta', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  await dialog.getByRole('checkbox').check();
+  const confirm = dialog.getByRole('button', { name: 'Eliminar mi cuenta' });
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(dialog.getByText(/el resultado de la eliminación sigue sin confirmarse/i)).toBeVisible();
+
+  await page.route(/\/src\/firebase\.ts(\?.*)?$/, route => route.fulfill({
+    contentType: 'application/javascript',
+    body: 'export const firebaseAuth = { currentUser: null }; export const firebaseApp = {}; export const assertFirebaseConfiguration = () => {};',
+  }));
+  await page.route(/\/src\/services\/auth\.ts(\?.*)?$/, async route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.has('real')) { await route.fallback(); return; }
+    url.searchParams.set('real', '1');
+    await route.fulfill({ contentType: 'application/javascript', body: `
+      export * from ${JSON.stringify(url.pathname + url.search)};
+      export const configureAuth = async () => {};
+      export const subscribeToAuth = callback => { callback(null); return () => {}; };
+    ` });
+  });
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Ver seguimiento de eliminación' }).click();
+  await dialog.getByRole('button', { name: 'Consultar estado' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.locator('.auth-card').getByRole('status')).toHaveText('El servidor confirmó la eliminación de tu cuenta.');
   expect(deletions).toBe(1);
 });

@@ -12,7 +12,7 @@ const invalidResponse: ApiErrorPayload = { success: false, code: 'INVALID_RESPON
 export type UserProfile = { uid: string; email: string; nombre: string; apellido: string; username: string; usernameKey: string; avatarUrl: string | null; profileStatus: 'complete'; createdAt: string; updatedAt: string };
 export type ProfileResponse = { uid: string; profileStatus: 'complete' | 'incomplete'; profile: UserProfile | null };
 export type DeletionStatus = 'none' | 'pending' | 'blocked' | 'completed';
-export type DeletionReceipt = { status: 'pending' | 'completed'; statusToken: string };
+export type DeletionReceipt = { status: 'pending' | 'completed'; statusToken?: string };
 export type EmailChangeEligibility = {
   eligible: true; currentEmail: string; targetEmail: string; nextStep: 'verify_before_update_email';
 };
@@ -84,11 +84,11 @@ export const api = {
   updateProfile: (input: Partial<{ nombre: string; apellido: string; username: string; avatarUrl: string | null }>) => request<ProfileResponse>('/api/users/me', { method: 'PATCH', body: JSON.stringify(input) }),
   requestEmailChange: (newEmail: string, signal?: AbortSignal) =>
     request<EmailChangeEligibility>('/api/users/me/email-change', { method: 'POST', body: JSON.stringify({ newEmail }), signal }, undefined, false, 200, false),
-  deleteProfile: (signal?: AbortSignal) =>
-    request<DeletionReceipt>('/api/users/me', { method: 'DELETE', signal }, undefined, false,
-      (status, data) => isRecord(data) && typeof data.statusToken === 'string' && !!data.statusToken.trim() &&
+  deleteProfile: (token: string, signal?: AbortSignal) =>
+    request<DeletionReceipt>('/api/users/me', { method: 'DELETE', headers: { 'X-Deletion-Status-Token': token }, signal }, undefined, false,
+      (status, data) => isRecord(data) &&
         ((status === 200 && data.status === 'completed') || (status === 202 && data.status === 'pending')), false, undefined, true),
-  getDeletionStatus: (statusToken?: string, signal?: AbortSignal) =>
+  getDeletionStatus: (statusToken: string, signal?: AbortSignal) =>
     request<{ status: DeletionStatus }>('/api/users/me/deletion-status', { signal }, undefined, false,
       (status, data) => status === 200 && isRecord(data) && (data.status === 'none' || data.status === 'pending' ||
         data.status === 'blocked' || data.status === 'completed'), false, statusToken),

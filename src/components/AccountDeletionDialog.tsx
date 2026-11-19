@@ -4,10 +4,11 @@ import { useAuth } from '../auth/AuthContext';
 import { api } from '../services/api';
 import { clearAuthProfileCache, currentFirebaseUser, deleteUserAccount, logoutUser, reauthenticateForDeletion } from '../services/auth';
 
-type Identity = NonNullable<ReturnType<typeof currentFirebaseUser>>;
+import { clearDeletionTracking, createDeletionToken, lastDeletionIdentity, readDeletionTracking, rememberDeletionIdentity, saveDeletionTracking, type DeletionTracking } from '../services/deletionTracking';
+
 type Phase = 'confirm' | 'reauth' | 'sending' | 'pending' | 'unknown' | 'blocked' | 'completed';
 type Attempt = {
-  identity: Identity;
+  uid: string;
   token?: string;
   started: boolean;
   completed?: boolean;
@@ -30,7 +31,7 @@ export function AccountDeletionDialog() {
 }
 
 export function AccountDeletionProvider({ children }: { children: ReactNode }) {
-  const { user, setUser } = useAuth();
+  const { user, loading, setUser } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const id = useId();
@@ -50,20 +51,35 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
 
   function current(active: Attempt) {
     const identity = currentFirebaseUser();
-    return attempt.current === active && (!identity || identity === active.identity);
+    return attempt.current === active && (!identity || identity.uid === active.uid);
   }
 
   useEffect(() => {
+    if (loading) return;
+    const identity = currentFirebaseUser();
+    if (identity) {
+      try { rememberDeletionIdentity(identity.uid); } catch { /* Checked before sending DELETE. */ }
+    }
     const active = attempt.current;
-    if (!active || current(active)) return;
-    attempt.current = null;
+    if (active && (!identity || identity.uid === active.uid)) return;
+
+    const uid = identity?.uid ?? lastDeletionIdentity();
+    const record = uid ? readDeletionTracking(uid) : null;
+    attempt.current = uid && record ? {
+      uid, token: record.token, started: record.phase !== 'reauth',
+    } : null;
+    checks.current = 0;
     operation.current = false;
     setBusy(false);
-    setPhase('confirm');
+    setChecked(false);
+    setPhase(record ? record.phase === 'reauth' && !identity ? 'unknown' : record.phase : 'confirm');
     setError('');
     setLocalFailure(undefined);
-    dialog.current?.close();
-  }, [user]);
+    if (active) {
+      setVisible(false);
+      dialog.current?.close();
+    }
+  }, [loading, user]);
 
   useEffect(() => () => { attempt.current = null; }, []);
 
@@ -71,8 +87,8 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
     const identity = currentFirebaseUser();
     if (!identity || user?.id !== identity.uid) return;
     trigger.current = button;
-    if (attempt.current?.identity !== identity || !attempt.current.started) {
-      attempt.current = { identity, started: false };
+    if (attempt.current?.uid !== identity.uid) {
+      attempt.current = { uid: identity.uid, started: false };
       checks.current = 0;
       setPhase('confirm');
       setError('');
@@ -83,15 +99,24 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
     cancel.current?.focus();
   }
 
+  function track(active: Attempt, phase: DeletionTracking['phase']) {
+    if (active.token) saveDeletionTracking(active.uid, { token: active.token, phase });
+  }
+
+  function updateTracking(active: Attempt, phase: DeletionTracking['phase']) {
+    try { track(active, phase); } catch { /* The original receipt was saved before sending. */ }
+    setPhase(phase);
+  }
+
   async function finishLocal(active: Attempt) {
     if (!active.completed || !current(active)) return;
     setLocalFailure(undefined);
     clearAuthProfileCache();
-    if (currentFirebaseUser() === active.identity) {
+    if (currentFirebaseUser()?.uid === active.uid) {
       try {
         await logoutUser();
       } catch {
-        if (current(active) && currentFirebaseUser() === active.identity) {
+        if (current(active) && currentFirebaseUser()?.uid === active.uid) {
           setLocalFailure('logout');
           return;
         }
@@ -113,6 +138,11 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
   async function complete(active: Attempt) {
     if (!current(active)) return;
     active.completed = true;
+    if (!visible) {
+      setVisible(true);
+      if (!dialog.current?.open) dialog.current?.showModal();
+    }
+    if (active.token) clearDeletionTracking(active.uid, active.token);
     active.token = undefined;
     setPhase('completed');
     setError('');
@@ -143,36 +173,58 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
 
   async function start(provider?: 'password' | 'google.com') {
     const active = attempt.current;
-    if (!active || !checked || operation.current || active.started || currentFirebaseUser() !== active.identity) return;
+    const identity = currentFirebaseUser();
+    if (!active || !identity || identity.uid !== active.uid || !checked || operation.current || active.started) return;
     const password = passwordInput.current?.value;
     if (passwordInput.current) passwordInput.current.value = '';
     operation.current = true;
     setBusy(true);
     setError('');
     try {
-      if (provider) await reauthenticateForDeletion(active.identity, provider, password);
-      if (!current(active) || currentFirebaseUser() !== active.identity) return;
+      if (provider) await reauthenticateForDeletion(identity, provider, password);
+      if (!current(active) || currentFirebaseUser() !== identity) return;
+      const stored = readDeletionTracking(active.uid);
+      if (stored && stored.phase !== 'reauth') {
+        active.token = stored.token;
+        active.started = true;
+        setPhase(stored.phase);
+        return;
+      }
+      active.token = stored?.token ?? active.token ?? createDeletionToken();
+      track(active, 'unknown');
       active.started = true;
       setPhase('sending');
-      const receipt = await deleteUserAccount();
+      const receipt = await deleteUserAccount(active.token);
       if (!current(active)) return;
-      active.token = receipt.statusToken;
       if (receipt.status === 'completed') await complete(active);
-      else setPhase('pending');
+      else updateTracking(active, 'pending');
     } catch (failure) {
       if (!current(active) || active.completed) return;
       const code = errorCode(failure);
-      if (!active.started || code === 'AUTH_RECENT_REQUIRED') {
+      if (code === 'AUTH_RECENT_REQUIRED') {
         active.started = false;
-        setPhase('reauth');
-        setError(failure instanceof Error ? failure.message : 'No pudimos confirmar tu identidad.');
+        updateTracking(active, 'reauth');
+        setError('Confirma tu identidad para continuar.');
+      } else if (!active.started) {
+        setError(provider ? (failure instanceof Error ? failure.message : 'No pudimos confirmar tu identidad.')
+          : 'No pudimos guardar el comprobante. Verifica el almacenamiento del navegador.');
+      } else if (code === 'VALIDATION_ERROR') {
+        if (active.token) clearDeletionTracking(active.uid, active.token);
+        active.token = undefined;
+        active.started = false;
+        setPhase('confirm');
+        setChecked(false);
+        setError('El servidor rechazó la solicitud. Verifica la operación o contacta a soporte.');
       } else if (code === 'ACCOUNT_DELETION_BLOCKED') {
-        setPhase('blocked');
+        updateTracking(active, 'blocked');
+      } else if (code === 'DELETION_STATUS_TOKEN_MISMATCH') {
+        active.token = readDeletionTracking(active.uid)?.token ?? active.token;
+        checks.current = MAX_AUTOMATIC_CHECKS;
+        updateTracking(active, 'unknown');
+        setError('La solicitud existente tiene otro comprobante. Si la iniciaste en otra pestaña, consulta allí o contacta a soporte.');
       } else {
-        setPhase('unknown');
-        setError(code === 'AUTH_REQUIRED' || code === 'AUTH_INVALID' || code === 'AUTH_REVOKED'
-          ? 'La sesión no permite confirmar la solicitud. Consulta el estado o contacta a soporte.'
-          : 'No pudimos confirmar el resultado. Consulta el estado antes de tomar otra acción.');
+        updateTracking(active, 'unknown');
+        setError('No pudimos confirmar el resultado. Consulta el estado antes de tomar otra acción.');
       }
     } finally {
       if (attempt.current === active) {
@@ -184,12 +236,7 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
 
   async function checkStatus() {
     const active = attempt.current;
-    if (!active || active.completed || !current(active) || operation.current) return;
-    if (!active.token && !currentFirebaseUser()) {
-      setPhase('unknown');
-      setError('Se perdió la sesión y falta el comprobante de seguimiento. Contacta a soporte.');
-      return;
-    }
+    if (!active?.token || active.completed || !current(active) || operation.current) return;
     checks.current++;
     operation.current = true;
     setBusy(true);
@@ -198,13 +245,22 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
       const result = await api.getDeletionStatus(active.token, AbortSignal.timeout(10_000));
       if (!current(active)) return;
       if (result.status === 'completed') await complete(active);
-      else if (result.status === 'blocked') setPhase('blocked');
-      else if (result.status === 'pending') setPhase('pending');
-      else setPhase('unknown');
-    } catch {
+      else if (result.status === 'blocked') updateTracking(active, 'blocked');
+      else if (result.status === 'pending') updateTracking(active, 'pending');
+      else {
+        checks.current = MAX_AUTOMATIC_CHECKS;
+        updateTracking(active, 'unknown');
+        setError('El estado no se pudo verificar con este comprobante.');
+      }
+    } catch (failure) {
       if (!current(active) || active.completed) return;
-      setPhase('unknown');
-      setError('No pudimos comprobar el estado. Puedes volver a consultarlo o contactar a soporte.');
+      updateTracking(active, 'unknown');
+      if (errorCode(failure) === 'DELETION_STATUS_NOT_FOUND') {
+        checks.current = MAX_AUTOMATIC_CHECKS;
+        setError('El estado no se pudo verificar con este comprobante.');
+      } else {
+        setError('No pudimos comprobar el estado. Puedes volver a consultarlo o contactar a soporte.');
+      }
     } finally {
       if (attempt.current === active) {
         operation.current = false;
@@ -214,14 +270,21 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const autoCheck = (phase === 'pending' && checks.current < MAX_AUTOMATIC_CHECKS) ||
-      (phase === 'unknown' && checks.current === 0 && !!currentFirebaseUser());
-    if (!visible || busy || !autoCheck) return;
-    const timer = window.setTimeout(() => { void checkStatus(); }, CHECK_INTERVAL_MS);
-    return () => window.clearTimeout(timer);
+    if (busy || loading || (phase !== 'pending' && phase !== 'unknown')) return;
+    const resume = () => {
+      checks.current = 0;
+      void checkStatus();
+    };
+    window.addEventListener('online', resume);
+    const timer = checks.current < MAX_AUTOMATIC_CHECKS
+      ? window.setTimeout(() => { void checkStatus(); }, CHECK_INTERVAL_MS) : undefined;
+    return () => {
+      window.removeEventListener('online', resume);
+      window.clearTimeout(timer);
+    };
   });
 
-  const provider = attempt.current?.identity.providerData ?? [];
+  const provider = currentFirebaseUser()?.providerData ?? [];
   const canCheck = phase === 'pending' || phase === 'unknown';
   const showConfirmation = phase === 'confirm' || phase === 'reauth';
   return <OpenDeletion.Provider value={open}>
