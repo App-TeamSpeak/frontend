@@ -98,3 +98,21 @@ Testing Library y Playwright mantienen el PATCH pendiente con una respuesta cont
 La evidencia usa fixtures sintéticas. Quedan pendientes Firebase y Firestore reales, el cierre de pestaña en otros navegadores, lector de pantalla y SonarQube Cloud. Se conserva el P3 visual del botón móvil de reintento y el seguimiento de dependencias heredadas.
 
 La verificación final con Node 24 aprobó lint, TypeScript, build, 114 casos Vitest y 22 casos Playwright. Cobertura global de 90,98 % en líneas, 77,98 % en ramas, 85,64 % en sentencias y 86,31 % en funciones. `git diff --check` aprobó. Vite mantiene el aviso de tamaño del bundle principal, ya presente antes de estas dos correcciones.
+
+## Diagnóstico anterior del Sprint 2 (3044e8a)
+
+El backend 3044e8a acepta `email` en el PATCH y busca colisiones en Firestore con `409 EMAIL_TAKEN`. El servicio actualiza el documento de perfil sin sincronizar Firebase Authentication. La edición de correo se conserva en solo lectura hasta verificar reautenticación, titularidad del correo nuevo, colisiones y recuperación coherente en ambos almacenes. Los demás campos conservan el flujo actual. Véase [la ficha para backend](sprint-2-integration.md).
+
+## Contrato vigente del Sprint 2
+
+Backend `038d456` retiró `email` de PATCH. El formulario separado conserva el correo actual y el borrador de nombre, apellido, username y avatar. Las cuentas con proveedor `password`, también si tienen Google vinculado, pueden solicitar un nuevo correo normalizado mediante POST `/api/users/me/email-change`. Google sin contraseña recibe `EMAIL_CHANGE_NOT_ALLOWED`. Ante `AUTH_RECENT_REQUIRED`, el frontend solicita la contraseña actual, reautentica con Firebase y renueva el token. La contraseña se usa en memoria durante la operación y se limpia del campo al enviar.
+
+La elegibilidad comprueba colisiones en Auth y Firestore. Tras una respuesta válida, `verifyBeforeUpdateEmail()` envía la verificación al correo nuevo. El frontend avisa que sigue pendiente. Al pulsar «Comprobar verificación», recarga Firebase, comprueba el correo verificado, renueva el token y consulta el perfil. Solo confirma cuando coinciden los dos datos. El estado pendiente de la interfaz se conserva en el perfil actual y se pierde en una recarga. El enlace de Firebase conserva su efecto y la siguiente consulta puede sincronizar el correo.
+
+El formulario separado y el estado pendiente complementan el frame de edición de Figma. Se verificaron colisión y conservación del borrador mediante fixtures. Falta comprobar la entrega, consumo del enlace y sincronización real con una identidad de prueba autorizada. La verificación de disponibilidad es previa. Si backend requiere garantía transaccional sobre la unicidad de Firestore durante todo el flujo, debe definir reserva o revalidación al sincronizar.
+
+## Recuperación de una verificación pendiente
+
+Una verificación pendiente antes solo permitía consultar el resultado, de modo que un enlace perdido o vencido bloqueaba la edición. Ahora se puede **Comprobar verificación**, **Enviar otra verificación**, **Cambiar dirección** o **Salir del cambio de correo**. Un reenvío explícito vuelve a comprobar elegibilidad y, si el servidor lo exige, pide reautenticación. La interfaz anuncia validación, envío, comprobación y resultado pendiente, conserva las acciones si hay un error de frecuencia o conectividad y bloquea operaciones simultáneas.
+
+Cambiar la dirección o salir restablece el seguimiento local y conserva el borrador del perfil. Los enlaces anteriores pueden seguir vigentes. Firebase es quien controla su validez. La confirmación se vincula al objetivo vigente y exige concordancia entre el correo verificado en Firebase y el perfil recuperado. Una respuesta tardía tras cambiar de identidad queda descartada. Las pruebas cubren enlace perdido o vencido, reenvío explícito, reautenticación, fallo recuperable, abandono y cambio de identidad. Quedan pendientes las pruebas autenticadas de entrega y consumo real del enlace.

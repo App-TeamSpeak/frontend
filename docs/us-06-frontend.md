@@ -109,3 +109,15 @@ Validación final con Node 24.18.0. Pasaron 147 pruebas Vitest en 19 archivos y 
 ## Corrección de fiabilidad en SonarQube Cloud
 
 El análisis del PR #13 señaló dos hallazgos `typescript:S7727` en el dashboard. El listado REST y la inserción de la sala confirmada pasaban `toPreview` directamente a `map`. Ahora ambos callbacks pasan explícitamente la sala y el índice que determina el color de la tarjeta. Se conserva el comportamiento del listado. El Quality Gate queda pendiente de una nueva ejecución remota.
+
+## Diagnóstico anterior del Sprint 2 (3044e8a)
+
+El backend 3044e8a comprueba existencia de sala y propietario o membresía antes de un nuevo ingreso Socket.IO. El frontend distingue sala inexistente, acceso denegado y autorización temporalmente indisponible. Conserva el detalle REST previo, el acknowledgement positivo, el evento de la sala y la reconexión. El caso del socket ya unido requiere revisar la revalidación tras revocar una membresía. El health público acredita disponibilidad del servicio, y la validación autenticada de autorización sigue pendiente. REST crea salas con `name`; Figma muestra una opción de privacidad que queda fuera del contrato. Véase [la ficha para backend](sprint-2-integration.md).
+
+El contrato revisado de TS-02 persiste `chat:send` y emite `chat:message` al canal con `messageId`, incluido el emisor. El cliente envía solo por Socket.IO y usa el historial REST para lectura y reconciliación por ID. El plazo de confirmación es de 12 segundos y un resultado incierto se informa sin reenviar. La validación autenticada del despliegue sigue pendiente.
+
+## Contrato vigente del Sprint 2
+
+Backend `038d456` revalida cada `room:join`, incluido reingreso a la misma sala. Su observador emite `room:access-revoked` con `roomId` y `ROOM_ACCESS_DENIED` o `ROOM_NOT_FOUND`. El cliente descarta los eventos de otra sala o sesión, invalida la presencia, apaga los estados AV, deshabilita chat y controles, y desconecta sin reingreso automático ante revocación. El usuario puede salir al dashboard. Se conservaron reconexiones ante pérdidas recuperables y la nueva confirmación de ingreso.
+
+El envío de chat continúa solo por Socket.IO. El historial REST se reconcilia mediante `messageId`, incluidos mensajes propios y de otros participantes. El OpenAPI público de Realtime documenta el evento nuevo. La revocación y persistencia autenticadas en Render quedan pendientes de prueba controlada.

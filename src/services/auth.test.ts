@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     createProfile: vi.fn(),
     updateProfile: vi.fn(),
     deleteProfile: vi.fn(),
+    requestEmailChange: vi.fn(),
   },
   setPersistence: vi.fn().mockResolvedValue(undefined),
   onIdTokenChanged: vi.fn(),
@@ -15,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   signInWithPopup: vi.fn(),
   sendEmailVerification: vi.fn().mockResolvedValue(undefined),
   sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined),
+  verifyEmailChange: vi.fn(),
+  reauthenticate: vi.fn(),
+  reauthenticatePopup: vi.fn(),
   signOut: vi.fn().mockResolvedValue(undefined),
   updateProfile: vi.fn().mockResolvedValue(undefined),
   assertFirebaseConfiguration: vi.fn(),
@@ -22,6 +26,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('firebase/auth', () => ({
   browserLocalPersistence: 'local',
+  EmailAuthProvider: { credential: (email: string, password: string) => ({ email, password }) },
+  verifyBeforeUpdateEmail: mocks.verifyEmailChange,
+  reauthenticateWithCredential: mocks.reauthenticate,
+  reauthenticateWithPopup: mocks.reauthenticatePopup,
   GoogleAuthProvider: class GoogleAuthProvider {},
   onIdTokenChanged: mocks.onIdTokenChanged,
   createUserWithEmailAndPassword: mocks.createUserWithEmailAndPassword,
@@ -43,6 +51,9 @@ import {
   clearAuthProfileCache,
   currentFirebaseUser,
   deleteUserAccount,
+  reauthenticateForDeletion,
+  requestVerifiedEmailChange,
+  confirmVerifiedEmailChange,
   loginUser,
   logoutUser,
   refreshCurrentUser,
@@ -315,9 +326,133 @@ describe('auth service', () => {
     await expect(refreshCurrentUser()).resolves.toBeNull();
   });
 
-  it('deletes the backend profile before signing out', async () => {
-    await deleteUserAccount();
-    expect(mocks.api.deleteProfile).toHaveBeenCalled();
-    expect(mocks.signOut).toHaveBeenCalledWith(mocks.auth);
+  it('returns the definitive receipt for the UI to coordinate logout', async () => {
+    mocks.auth.currentUser = firebaseUser();
+    mocks.api.deleteProfile.mockResolvedValueOnce({ status: 'completed', statusToken: 'fixture' });
+    await expect(deleteUserAccount()).resolves.toMatchObject({ status: 'completed' });
+    expect(mocks.api.deleteProfile).toHaveBeenCalledOnce();
+    expect(mocks.signOut).not.toHaveBeenCalled();
   });
+  it.each(['pending', 'network', 'timeout'])('preserva la sesión ante resultado incierto: %s', async outcome => {
+    mocks.auth.currentUser = firebaseUser();
+    if (outcome === 'pending') mocks.api.deleteProfile.mockResolvedValueOnce({ status: 'pending' });
+    else mocks.api.deleteProfile.mockRejectedValueOnce(outcome === 'timeout' ? new DOMException('Timeout', 'TimeoutError') : new TypeError('offline'));
+    await expect(deleteUserAccount()).rejects.toMatchObject({ code: 'ACCOUNT_DELETION_UNKNOWN' });
+    expect(mocks.api.deleteProfile).toHaveBeenCalledOnce();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('bloquea envíos simultáneos y descarta un éxito de la sesión anterior', async () => {
+    mocks.auth.currentUser = firebaseUser();
+    let finish!: (value: { status: string; statusToken: string }) => void;
+    mocks.api.deleteProfile.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = expect(deleteUserAccount()).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    await expect(deleteUserAccount()).rejects.toMatchObject({ code: 'ACCOUNT_DELETION_IN_PROGRESS' });
+    mocks.auth.currentUser = firebaseUser({ uid: 'u2' });
+    finish({ status: 'completed', statusToken: 'fixture' });
+    await pending;
+    expect(mocks.api.deleteProfile).toHaveBeenCalledOnce();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('preserves the session and returns the pending receipt', async () => {
+    mocks.auth.currentUser = firebaseUser();
+    mocks.api.deleteProfile.mockResolvedValueOnce({ status: 'pending', statusToken: 'fixture' });
+    await expect(deleteUserAccount()).resolves.toEqual({ status: 'pending', statusToken: 'fixture' });
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('normalizes the target, reauthenticates and sends Firebase verification after eligibility', async () => {
+    const user = firebaseUser({ providerData: [{ providerId: 'password' }] });
+    mocks.auth.currentUser = user;
+    mocks.api.requestEmailChange.mockResolvedValueOnce({
+      eligible: true, currentEmail: user.email, targetEmail: 'new@example.test', nextStep: 'verify_before_update_email',
+    });
+    const signal = new AbortController().signal;
+    await requestVerifiedEmailChange('u1', ' New@Example.Test ', signal, 'fixture-password');
+    expect(mocks.reauthenticate).toHaveBeenCalledWith(user, { email: user.email, password: 'fixture-password' });
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(mocks.api.requestEmailChange).toHaveBeenCalledWith('new@example.test', signal);
+    expect(mocks.verifyEmailChange).toHaveBeenCalledWith(user, 'new@example.test');
+  });
+
+  it.each(['EMAIL_TAKEN', 'EMAIL_UNCHANGED', 'AUTH_RECENT_REQUIRED', 'FIRESTORE_UNAVAILABLE'])(
+    'does not send Firebase verification when backend reports %s', async code => {
+      mocks.auth.currentUser = firebaseUser({ providerData: [{ providerId: 'password' }] });
+      mocks.api.requestEmailChange.mockRejectedValueOnce(new ApiError(409, { success: false, code, message: code }));
+      await expect(requestVerifiedEmailChange('u1', 'new@example.test', new AbortController().signal)).rejects.toMatchObject({ code });
+      expect(mocks.verifyEmailChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it('blocks Google-only accounts before eligibility or verification', async () => {
+    mocks.auth.currentUser = firebaseUser({ providerData: [{ providerId: 'google.com' }] });
+    await expect(requestVerifiedEmailChange('u1', 'new@example.test', new AbortController().signal)).rejects.toMatchObject({ code: 'EMAIL_CHANGE_NOT_ALLOWED' });
+    expect(mocks.api.requestEmailChange).not.toHaveBeenCalled();
+    expect(mocks.verifyEmailChange).not.toHaveBeenCalled();
+  });
+
+  it('confirms only after the verified Firebase email matches the synchronized profile', async () => {
+    const target = 'new@example.test';
+    mocks.auth.currentUser = firebaseUser({ email: target, emailVerified: false });
+    await expect(confirmVerifiedEmailChange('u1', target)).resolves.toBeUndefined();
+    expect(mocks.api.getProfile).not.toHaveBeenCalled();
+    mocks.auth.currentUser.emailVerified = true;
+    mocks.api.getProfile.mockResolvedValueOnce({ uid: 'u1', profileStatus: 'complete', profile: { ...profile, email: target } });
+    await expect(confirmVerifiedEmailChange('u1', target)).resolves.toMatchObject({ profile: { email: target }, user: { email: target } });
+  });
+
+  it('does not send Firebase verification when identity changes during eligibility', async () => {
+    const user = firebaseUser({ providerData: [{ providerId: 'password' }] });
+    mocks.auth.currentUser = user;
+    mocks.api.requestEmailChange.mockImplementationOnce(async () => {
+      mocks.auth.currentUser = firebaseUser({ uid: 'u2' });
+      return { eligible: true, currentEmail: user.email, targetEmail: 'new@example.test', nextStep: 'verify_before_update_email' };
+    });
+    await expect(requestVerifiedEmailChange('u1', 'new@example.test', new AbortController().signal)).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    expect(mocks.verifyEmailChange).not.toHaveBeenCalled();
+  });
+
+  it('does not call eligibility when password reauthentication fails', async () => {
+    mocks.auth.currentUser = firebaseUser({ providerData: [{ providerId: 'password' }] });
+    mocks.reauthenticate.mockRejectedValueOnce({ code: 'auth/invalid-credential' });
+    await expect(requestVerifiedEmailChange('u1', 'new@example.test', new AbortController().signal, 'wrong-fixture'))
+      .rejects.toMatchObject({ code: 'auth/invalid-credential' });
+    expect(mocks.api.requestEmailChange).not.toHaveBeenCalled();
+    expect(mocks.verifyEmailChange).not.toHaveBeenCalled();
+  });
+
+  it('reports Firebase email delivery failure after eligibility', async () => {
+    const target = 'new@example.test';
+    const user = firebaseUser({ providerData: [{ providerId: 'password' }] });
+    mocks.auth.currentUser = user;
+    mocks.api.requestEmailChange.mockResolvedValueOnce({
+      eligible: true, currentEmail: user.email, targetEmail: target, nextStep: 'verify_before_update_email',
+    });
+    mocks.verifyEmailChange.mockRejectedValueOnce({ code: 'auth/network-request-failed' });
+    await expect(requestVerifiedEmailChange('u1', target, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'auth/network-request-failed' });
+    expect(mocks.verifyEmailChange).toHaveBeenCalledOnce();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('reauthenticates a Google-linked identity using its provider before refreshing the token', async () => {
+    const user = firebaseUser({ providerData: [{ providerId: 'google.com' }] });
+    mocks.auth.currentUser = user;
+    await reauthenticateForDeletion(user as unknown as Parameters<typeof reauthenticateForDeletion>[0], 'google.com');
+    expect(mocks.reauthenticatePopup).toHaveBeenCalledWith(user, expect.any(Object));
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(mocks.api.deleteProfile).not.toHaveBeenCalled();
+  });
+
+  it('keeps the definitive receipt if Firebase removes the current identity during deletion', async () => {
+    mocks.auth.currentUser = firebaseUser();
+    mocks.api.deleteProfile.mockImplementationOnce(async () => {
+      mocks.auth.currentUser = null;
+      return { status: 'completed', statusToken: 'fixture' };
+    });
+    await expect(deleteUserAccount()).resolves.toMatchObject({ status: 'completed' });
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
 });

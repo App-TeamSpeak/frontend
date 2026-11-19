@@ -10,7 +10,7 @@ El diálogo nativo usa `showModal()`, título y descripción accesibles, una eti
 
 [Diseño de Sprint 2 en Figma](https://www.figma.com/design/WHh4b0fAkGJeuUR4IBsvlc/TeamSpeak-UX-UI-Flow?node-id=295-36)
 
-## Seguridad y pruebas
+## Seguridad y pruebas de la fase 1
 
 El componente carece de un controlador destructivo y de dependencias de HTTP, Firebase o autenticación. La confirmación se limita al diálogo. La sesión y el perfil se conservan. Las pruebas de perfil verifican que no se llama al servicio DELETE, a `deleteUserAccount()`, a la eliminación de Firebase ni a los servicios de logout. Playwright usa identidades sintéticas e intercepta cualquier DELETE de perfil, además de comprobar teclado, foco, reapertura, cambio de cuenta y diseño responsive. Sus capturas son evidencia de la interfaz.
 
@@ -24,6 +24,40 @@ La fase 2 requiere idempotencia en el servidor. El backend puede aceptar una sol
 
 [Contrato OpenAPI de backend](https://github.com/App-TeamSpeak/backend/blob/e52afa7f05e09ef44d2b93429bf1a30c974667e3/backend-api/src/docs/openapi.ts)
 
-## Validación local
+## Validación local de la fase 1
 
 Con Node.js 24.18.0 aprobaron las 12 pruebas focalizadas de perfil, 147 pruebas Vitest y 32 pruebas Playwright. La cobertura global fue de 91,22 % de líneas, 77,68 % de ramas, 86,09 % de sentencias y 88,39 % de funciones. Pasaron lint, TypeScript, build y `git diff --check`. El build mantuvo la advertencia de tamaño del bundle. Se revisaron las capturas en escritorio y móvil. Queda pendiente la comprobación con lector de pantalla.
+
+## Diagnóstico anterior del Sprint 2 (3044e8a)
+
+El OpenAPI publicado ahora describe `200` con `status: "deleted"` para el DELETE sin cuerpo. El flujo histórico de emulador con `202 pending` sigue siendo distinto. La ruta actual borra datos en varias fases y carece de recuperación verificable después de eliminar la identidad. El diálogo permanece deshabilitado. El helper frontend preparado exige `200 deleted`, evita reintentos automáticos y solicitudes concurrentes de la misma sesión, trata red, timeout y respuestas ambiguas como resultado desconocido e ignora una confirmación de otra sesión. Su plazo local es de 20 segundos. Se prueba con fixtures y sigue desconectado de la interfaz. Véase [la ficha para backend](sprint-2-integration.md).
+
+## Revisión previa a la habilitación
+
+Backend `038d456` reemplazó el contrato inmediato `200 deleted` por DELETE sin cuerpo con `202 pending` o `200 completed`, ambos con `statusToken`. El servidor verifica revocación, exige autenticación reciente para la primera solicitud y usa fases y lease. GET `/api/users/me/deletion-status` reporta `none`, `pending`, `blocked` o `completed`. Acepta Bearer o `X-Deletion-Status-Token`.
+
+El transporte frontend valida el par HTTP/estado, envía un solo DELETE sin reintento automático y ofrece consulta manual por Bearer o encabezado de estado. El helper conserva sesión ante pendiente, timeout o pérdida de respuesta. Solo `completed` válido de la sesión vigente permite limpiar sesión. El cliente no persiste el token, no lo introduce en URL ni lo registra. No hay polling activo.
+
+El diálogo continúa deshabilitado. El conciliador publicado solo se habilita en emuladores. El GET de seguimiento es de lectura y, si se pierde la respuesta inicial tras invalidar la identidad, puede faltar tanto el token de estado como un Bearer utilizable. Además, reiterar DELETE rota el token. Antes de conectar el diálogo, backend debe acreditar reanudación productiva, recuperación cuando se pierde el primer recibo y estabilidad o rotación recuperable del token. No hay pantallas productivas simuladas de procesamiento o éxito.
+
+## US-05 habilitada en frontend
+
+El diálogo abre desde Mi perfil con la casilla desmarcada. Marcarla habilita «Eliminar mi cuenta» y la operación requiere un clic explícito. Cancelar o Escape antes de iniciar conservan perfil y sesión. Si el DELETE es rechazado con `AUTH_RECENT_REQUIRED`, se solicita la contraseña actual o reautenticación con Google según los proveedores vinculados. Se usa Firebase Client SDK y se renueva el ID token después de reautenticar. La contraseña se limpia del campo al enviar y se usa solo en memoria.
+
+El cliente envía DELETE sin cuerpo y valida la combinación de código HTTP y estado. `202 pending` conserva la sesión y muestra que la solicitud fue aceptada. El seguimiento consulta GET mediante el token recibido. El diálogo ofrece consulta manual y hasta tres consultas automáticas con intervalos de tres segundos, limitadas al diálogo visible. Cada GET tiene un plazo de diez segundos. El DELETE tiene un plazo HTTP de veinte segundos. Si se pierde la respuesta, se intenta consultar con Bearer cuando sigue disponible. Un rechazo de autenticación reciente permite una nueva solicitud explícita tras reautenticar. Un resultado ambiguo nunca provoca otro DELETE. Los estados `none`, `blocked` y los errores de consulta no acreditan finalización.
+
+El seguimiento vive en memoria en el layout y permanece durante la navegación en el mismo documento. El token va exclusivamente por encabezado, se descarta al cambiar de identidad o confirmar y se pierde con una recarga completa. Si se pierden la sesión y el recibo, la interfaz ofrece ayuda y evita afirmar un resultado. Un `completed` válido limpia la sesión y caché, cierra el diálogo y dirige al login con un aviso. El diálogo usa etiquetas, estados anunciables y restitución de foco cuando el disparador sigue montado. La confirmación y procesamiento siguen los frames de Figma. El aviso final se presenta en login y se añaden los estados de seguimiento e incertidumbre requeridos por el contrato.
+
+Render publica los endpoints descritos en el código revisado en el SHA `038d456177862ecf2a9a4d7e36c9614e9529e499`. Los recorridos de frontend se verifican con identidades y respuestas sintéticas. La prueba autenticada de eliminación definitiva sigue pendiente. La reanudación automática tras fallos parciales y el seguimiento cuando se pierde el primer recibo tras revocar Auth requieren garantías de backend. La interfaz no puede completar ni certificar esos casos.
+
+### Validación de la habilitación
+
+Con Node.js 24.18.0 aprobaron 94 pruebas focalizadas, 187 pruebas Vitest y 38 Playwright, 19 por proyecto. Cobertura global de 90,41 % en líneas, 78,38 % en ramas, 85,25 % en sentencias y 87,66 % en funciones. Pasaron lint, TypeScript, build y `git diff --check`. Las capturas a 1440 × 900 y 390 × 844 muestran confirmación, procesamiento, bloqueo y aviso de éxito en login con fixtures.
+
+### Finalización confirmada y recuperación local
+
+El estado `completed` se registra de forma definitiva por cada intento y descarta el recibo de seguimiento. Antes, un rechazo de `logoutUser()` podía propagarse al manejo del DELETE o del GET y presentar falsamente un resultado desconocido. La finalización ahora distingue el resultado del servidor, la limpieza local de Firebase y la apertura del login.
+
+Si el cierre local falla y Firebase conserva la identidad, el diálogo mantiene la confirmación, limpia la caché del perfil y permite reintentar solo el cierre. La pantalla privada permanece detrás del diálogo modal hasta que se pueda completar la salida. El contexto de autenticación se limpia cuando Firebase deja de tener una identidad activa. Si falla la transición al login, se ofrece reintentar la navegación. La recuperación serializa los intentos, comprueba la identidad vigente y carece de nuevas solicitudes DELETE o de seguimiento.
+
+Las pruebas cubren confirmación directa y por seguimiento, fallo y recuperación de logout, fallo de navegación, cambio de identidad y doble activación. Sigue pendiente de backend la recuperación sin recibo tras invalidar Auth y la reanudación productiva. Ese caso ocurre antes de obtener una confirmación definitiva.

@@ -1,8 +1,8 @@
-import { browserLocalPersistence, createUserWithEmailAndPassword, GoogleAuthProvider, onIdTokenChanged, sendEmailVerification, sendPasswordResetEmail, setPersistence, signInWithEmailAndPassword, signInWithPopup, signOut, updateProfile as updateFirebaseProfile, type User } from 'firebase/auth';
+import { EmailAuthProvider, reauthenticateWithCredential, reauthenticateWithPopup, verifyBeforeUpdateEmail, browserLocalPersistence, createUserWithEmailAndPassword, GoogleAuthProvider, onIdTokenChanged, sendEmailVerification, sendPasswordResetEmail, setPersistence, signInWithEmailAndPassword, signInWithPopup, signOut, updateProfile as updateFirebaseProfile, type User } from 'firebase/auth';
 import { assertFirebaseConfiguration, firebaseAuth } from '../firebase';
 import { api, ApiError, type ProfileResponse } from './api';
 
-export type AuthUser = { id: string; name: string; apellido: string; email: string; username?: string; avatarUrl: string | null; emailVerified: boolean; profileError?: string };
+export type AuthUser = { id: string; name: string; apellido: string; email: string; username?: string; avatarUrl: string | null; emailVerified: boolean; canChangeEmail?: boolean; profileError?: string };
 export class AuthError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.name = 'AuthError'; this.code = code; } }
 const pendingKey = 'teamspeak.pending-profile';
 type PendingProfile = { nombre: string; apellido: string };
@@ -21,6 +21,7 @@ const invalidProfileCodes = new Set([
 ]);
 let session: ProfileSession | undefined;
 let signingOut = false;
+const deletionInFlight = new WeakSet<User>();
 
 function currentSession(user: User): ProfileSession {
   if (signingOut || user !== firebaseAuth.currentUser) throw new AuthError('AUTH_REQUIRED', 'Inicia sesión para continuar.');
@@ -48,7 +49,7 @@ function confirmProfile(expected: ProfileSession, response: ProfileResponse) {
 
 function profileUser(user: User, response?: ProfileResponse): AuthUser {
   const profile = response?.profile;
-  return { id: user.uid, name: profile?.nombre ?? user.displayName?.split(' ').slice(0, -1).join(' ') ?? user.displayName ?? '', apellido: profile?.apellido ?? user.displayName?.split(' ').slice(-1).join(' ') ?? '', email: user.email ?? '', username: profile?.username, avatarUrl: profile ? profile.avatarUrl : user.photoURL, emailVerified: user.emailVerified };
+  return { id: user.uid, name: profile?.nombre ?? user.displayName?.split(' ').slice(0, -1).join(' ') ?? user.displayName ?? '', apellido: profile?.apellido ?? user.displayName?.split(' ').slice(-1).join(' ') ?? '', email: user.email ?? '', username: profile?.username, avatarUrl: profile ? profile.avatarUrl : user.photoURL, emailVerified: user.emailVerified, canChangeEmail: user.providerData?.some(provider => provider.providerId === 'password') };
 }
 function savePending(value: PendingProfile) { sessionStorage.setItem(pendingKey, JSON.stringify(value)); }
 function readPending(): PendingProfile { try { return JSON.parse(sessionStorage.getItem(pendingKey) ?? '{}') as PendingProfile; } catch { return { nombre: '', apellido: '' }; } }
@@ -203,7 +204,102 @@ export async function updateUserProfile(input: { nombre?: string; apellido?: str
     };
   } catch (error) { return mapAuthError(error); }
 }
-export async function deleteUserAccount() { try { await api.deleteProfile(); clearAuthProfileCache(); await signOut(firebaseAuth); } catch (error) { return mapAuthError(error); } }
+export async function requestVerifiedEmailChange(uid: string, target: string, signal: AbortSignal, password?: string, onSending?: () => void) {
+  const user = firebaseAuth.currentUser;
+  if (!user || user.uid !== uid) throw new AuthError('AUTH_REQUIRED', 'Inicia sesión para continuar.');
+  const expected = currentSession(user);
+  const email = user.email?.trim().toLowerCase();
+  const newEmail = target.trim().toLowerCase();
+  if (!user.providerData?.some(provider => provider.providerId === 'password')) {
+    throw new AuthError('EMAIL_CHANGE_NOT_ALLOWED', 'Tu método de autenticación no admite cambiar el correo desde TeamSpeak.');
+  }
+  if (!email || newEmail === email) throw new AuthError('EMAIL_UNCHANGED', 'El nuevo correo debe ser diferente al actual.');
+  try {
+    if (password !== undefined) {
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(email, password));
+      assertSession(expected);
+      signal.throwIfAborted();
+      await user.getIdToken(true);
+    }
+    assertSession(expected);
+    signal.throwIfAborted();
+    const eligibility = await api.requestEmailChange(newEmail, signal);
+    assertSession(expected);
+    signal.throwIfAborted();
+    if (eligibility?.eligible !== true || eligibility.targetEmail !== newEmail ||
+        eligibility.currentEmail !== email || eligibility.nextStep !== 'verify_before_update_email') {
+      throw new AuthError('INVALID_RESPONSE', 'No pudimos confirmar la disponibilidad del correo.');
+    }
+    onSending?.();
+    await verifyBeforeUpdateEmail(user, newEmail);
+    assertSession(expected);
+    signal.throwIfAborted();
+  } catch (error) {
+    if (error instanceof AuthError) throw error;
+    return mapAuthError(error);
+  }
+}
+
+export async function confirmVerifiedEmailChange(uid: string, target: string) {
+  const user = firebaseAuth.currentUser;
+  if (!user || user.uid !== uid) throw new AuthError('AUTH_REQUIRED', 'Inicia sesión para continuar.');
+  const expected = currentSession(user);
+  await user.reload();
+  assertSession(expected);
+  if (!user.emailVerified || user.email?.trim().toLowerCase() !== target) return undefined;
+  await user.getIdToken(true);
+  assertSession(expected);
+  const result = await refreshProfile(uid);
+  if (result.error) throw result.error;
+  const profile = result.response?.profile;
+  if (!result.isCurrent() || profile?.email.trim().toLowerCase() !== target) {
+    throw new AuthError('EMAIL_SYNC_PENDING', 'El correo está verificado. Aún no pudimos sincronizar el perfil.');
+  }
+  return { profile, user: result.user, isCurrent: result.isCurrent };
+}
+
+export async function reauthenticateForDeletion(user: User, provider: 'password' | 'google.com', password?: string) {
+  if (firebaseAuth.currentUser !== user) throw new AuthError('AUTH_REQUIRED', 'Inicia sesión para continuar.');
+  if (!user.providerData.some(entry => entry.providerId === provider)) {
+    throw new AuthError('AUTH_PROVIDER_REQUIRED', 'Usa un método vinculado a tu cuenta.');
+  }
+  try {
+    if (provider === 'google.com') await reauthenticateWithPopup(user, new GoogleAuthProvider());
+    else await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email ?? '', password ?? ''));
+    if (firebaseAuth.currentUser !== user) throw new AuthError('AUTH_REQUIRED', 'La sesión cambió.');
+    await user.getIdToken(true);
+    if (firebaseAuth.currentUser !== user) throw new AuthError('AUTH_REQUIRED', 'La sesión cambió.');
+  } catch (error) {
+    if (error instanceof AuthError) throw error;
+    return mapAuthError(error);
+  }
+}
+
+export async function deleteUserAccount() {
+  const user = firebaseAuth.currentUser;
+  if (!user) throw new AuthError('AUTH_REQUIRED', 'Inicia sesión para continuar.');
+  const expected = currentSession(user);
+  if (deletionInFlight.has(user)) throw new AuthError('ACCOUNT_DELETION_IN_PROGRESS', 'Ya hay una solicitud en curso.');
+  deletionInFlight.add(user);
+  try {
+    let result: Awaited<ReturnType<typeof api.deleteProfile>>;
+    try {
+      result = await api.deleteProfile(AbortSignal.timeout(20_000));
+    } catch (error) {
+      if (firebaseAuth.currentUser) assertSession(expected);
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500 &&
+          error.status !== 408 && error.code !== 'INVALID_RESPONSE') throw error;
+      throw new AuthError('ACCOUNT_DELETION_UNKNOWN', 'No pudimos confirmar la eliminación. Evita repetir la solicitud.');
+    }
+    if (firebaseAuth.currentUser) assertSession(expected);
+    if (!result?.statusToken || (result.status !== 'pending' && result.status !== 'completed')) {
+      throw new AuthError('ACCOUNT_DELETION_UNKNOWN', 'No pudimos confirmar la eliminación. Evita repetir la solicitud.');
+    }
+    return result;
+  } finally {
+    deletionInFlight.delete(user);
+  }
+}
 export async function resendVerification() { try { if (!firebaseAuth.currentUser) throw new AuthError('AUTH_REQUIRED', 'Inicia sesión para continuar.'); await sendEmailVerification(firebaseAuth.currentUser); } catch (error) { return mapAuthError(error); } }
 export async function resetPassword(email: string) { try { assertFirebaseConfiguration(); await sendPasswordResetEmail(firebaseAuth, email.trim()); } catch (error) { return mapAuthError(error); } }
 export async function logoutUser() {

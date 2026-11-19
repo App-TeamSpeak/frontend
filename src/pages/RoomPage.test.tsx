@@ -44,7 +44,6 @@ describe('RoomPage', () => {
   it('carga una sala, inicia medios apagados, procesa participantes y deduplica ecos propios', async () => {
     mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
     mocks.listMessages.mockResolvedValue([{ id: 'm1', roomId: 'room-1', authorId: 'u2', text: 'Hola', createdAt: '2026-01-01T12:00:00Z' }]);
-    mocks.createMessage.mockResolvedValue({ id: 'm2', roomId: 'room-1', authorId: 'u1', text: 'Adelante', createdAt: '2026-01-01T12:01:00Z' });
     mocks.io.mockReturnValue(mocks.socket);
     renderRoom();
     await screen.findByRole('heading', { name: 'Participantes' });
@@ -68,11 +67,21 @@ describe('RoomPage', () => {
     expect(mocks.socket.emit).toHaveBeenCalledWith('media:state', { microphone: true, camera: false });
     fireEvent.click(screen.getByRole('button', { name: 'Cámara apagada' }));
     expect(mocks.socket.emit).toHaveBeenCalledWith('media:state', { microphone: true, camera: true });
-    listeners['chat:message']({ authorId: 'u1', text: 'Adelante', createdAt: '2026-01-01T12:01:00Z' });
-    expect(screen.queryAllByText('Adelante')).toHaveLength(0);
+    const emit = vi.fn();
+    Object.assign(mocks.socket, { volatile: { timeout: vi.fn().mockReturnValue({ emit }) } });
     fireEvent.change(screen.getByLabelText('Mensaje para la sala'), { target: { value: 'Adelante' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
-    expect(await screen.findByText('Adelante')).toBeInTheDocument();
+    expect(emit).toHaveBeenCalledExactlyOnceWith('chat:send', { text: 'Adelante' }, expect.any(Function));
+    expect(mocks.createMessage).not.toHaveBeenCalled();
+    const saved = { messageId: 'm2', authorId: 'u1', text: 'Adelante', createdAt: '2026-01-01T12:01:00Z' };
+    act(() => {
+      listeners['chat:message'](saved);
+      listeners['chat:message'](saved);
+      emit.mock.calls[0][2](null, { ok: true });
+    });
+    expect(screen.getAllByText('Adelante')).toHaveLength(1);
+    act(() => listeners['chat:message']({ messageId: 'm1', authorId: 'u2', text: 'Hola', createdAt: '2026-01-01T12:00:00Z' }));
+    expect(screen.getAllByText('Hola')).toHaveLength(1);
   });
 
   it('shows a member and surfaces a realtime join rejection independently of REST', async () => {
@@ -115,6 +124,49 @@ describe('RoomPage', () => {
     expect(screen.getByText('Tu sesión no tiene autorización para el ingreso en tiempo real.')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Reintentar conexión' })).not.toBeInTheDocument();
     expect(screen.queryByText('Ingreso confirmado')).not.toBeInTheDocument();
+    view.unmount();
+    expect(mocks.socket.removeAllListeners).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['ROOM_NOT_FOUND', 'La sala no existe.', false],
+    ['ROOM_ACCESS_DENIED', 'No tienes acceso a esta sala.', false],
+    ['AUTHORIZATION_UNAVAILABLE', 'No pudimos verificar el acceso a la sala. Inténtalo de nuevo.', true],
+  ])('distingue %s devuelto después del detalle REST', async (code, message, retry) => {
+    const { listeners } = await setupRealtime();
+    act(() => listeners.connect());
+    act(() => listeners['error:message']({ code }));
+    expect(screen.getByText(message)).toBeVisible();
+    expect(screen.queryByText('Ingreso confirmado')).not.toBeInTheDocument();
+    const recovery = screen.queryByRole('button', { name: 'Reintentar conexión' });
+    if (retry) expect(recovery).toBeVisible();
+    else expect(recovery).not.toBeInTheDocument();
+  });
+
+  it.each(['ROOM_ACCESS_DENIED', 'ROOM_NOT_FOUND'])('revoca el ingreso vigente por %s y bloquea controles', async code => {
+    const { view, listeners } = await setupRealtime();
+    act(() => {
+      listeners.connect();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1'] });
+      acknowledgeJoin();
+      listeners['room:access-revoked']({ roomId: 'another-room', code });
+    });
+    expect(screen.getByText('Ingreso confirmado')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Mensaje para la sala'), { target: { value: 'Texto' } });
+    expect(screen.getByRole('button', { name: 'Enviar mensaje' })).toBeEnabled();
+    act(() => {
+      listeners['room:access-revoked']({ roomId: 'room-1', code });
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1'] });
+      listeners.connect();
+    });
+    expect(screen.queryByText('Ingreso confirmado')).not.toBeInTheDocument();
+    expect(screen.queryByText('1 participantes')).not.toBeInTheDocument();
+    expect(screen.getByText(code === 'ROOM_NOT_FOUND' ? 'La sala no existe.' : 'No tienes acceso a esta sala.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Enviar mensaje' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Micrófono silenciado' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Reintentar conexión' })).not.toBeInTheDocument();
+    expect(mocks.socket.disconnect).toHaveBeenCalledOnce();
+    expect(mocks.socket.emit.mock.calls.filter(([name]) => name === 'room:join')).toHaveLength(1);
     view.unmount();
     expect(mocks.socket.removeAllListeners).toHaveBeenCalledOnce();
   });

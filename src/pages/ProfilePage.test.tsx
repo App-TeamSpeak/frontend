@@ -2,17 +2,26 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
+import { AccountDeletionProvider } from '../components/AccountDeletionDialog';
 import { ProfilePage } from './ProfilePage';
+import { ProfileEmailChange } from '../components/ProfileEmailChange';
 
-const mocks = vi.hoisted(() => ({ setUser: vi.fn(), getProfile: vi.fn(), update: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), firebaseDelete: vi.fn(), signOut: vi.fn() }));
-vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1' }, setUser: mocks.setUser, logout: mocks.logout }) }));
-vi.mock('../services/auth', () => ({ AuthError: class extends Error {}, refreshProfile: mocks.getProfile, updateUserProfile: mocks.update, deleteUserAccount: mocks.deleteAccount, logoutUser: mocks.logout }));
+const mocks = vi.hoisted(() => ({ identity: { uid: 'u1', providerData: [{ providerId: 'password' }] }, signedOut: false, reauthenticateDeletion: vi.fn(), clearCache: vi.fn(), canChangeEmail: undefined as boolean | undefined, requestEmail: vi.fn(), confirmEmail: vi.fn(), setUser: vi.fn(), getProfile: vi.fn(), update: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), firebaseDelete: vi.fn(), signOut: vi.fn() }));
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1', canChangeEmail: mocks.canChangeEmail }, setUser: mocks.setUser, logout: mocks.logout }) }));
+vi.mock('../services/auth', () => ({ AuthError: class extends Error {}, refreshProfile: mocks.getProfile, updateUserProfile: mocks.update, requestVerifiedEmailChange: mocks.requestEmail, confirmVerifiedEmailChange: mocks.confirmEmail, deleteUserAccount: mocks.deleteAccount, logoutUser: mocks.logout, currentFirebaseUser: () => mocks.signedOut ? null : mocks.identity, reauthenticateForDeletion: mocks.reauthenticateDeletion, clearAuthProfileCache: mocks.clearCache }));
 vi.mock('firebase/auth', async importOriginal => ({
   ...await importOriginal<typeof import('firebase/auth')>(), deleteUser: mocks.firebaseDelete, signOut: mocks.signOut,
 }));
 const profile = { uid: 'u1', nombre: 'Ana', apellido: 'Pérez', username: 'ana_perez', email: 'ana@example.test', avatarUrl: null };
 const response = { uid: 'u1', profileStatus: 'complete', profile };
-function openProfile() { return render(<RouterProvider router={createMemoryRouter([{ path: "/", element: <ProfilePage /> }])} />); }
+function openProfile(failNavigation = false) {
+  const router = createMemoryRouter([
+    { path: '/', element: <AccountDeletionProvider><ProfilePage /></AccountDeletionProvider> },
+    { path: '/login', element: <h1>Iniciar sesión</h1> },
+  ]);
+  if (failNavigation) vi.spyOn(router, 'navigate').mockRejectedValueOnce(new Error('navegación interrumpida'));
+  return { ...render(<RouterProvider router={router} />), router };
+}
 function click(name: string) { fireEvent.click(screen.getByRole('button', { name })); }
 function change(label: string, value: string) { fireEvent.change(screen.getByLabelText(label), { target: { value } }); }
 async function edit() { openProfile(); fireEvent.click(await screen.findByRole('button', { name: 'Editar perfil' })); mocks.setUser.mockClear(); }
@@ -20,6 +29,10 @@ function error(status: number, code: string) { return new ApiError(status, { suc
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.canChangeEmail = undefined;
+  mocks.identity = { uid: 'u1', providerData: [{ providerId: 'password' }] };
+  mocks.signedOut = false;
+  mocks.logout.mockImplementation(async () => { mocks.signedOut = true; });
   const setResult = (result: object) => ({ ...result, isCurrent: () => true });
   Object.defineProperties(HTMLDialogElement.prototype, {
     showModal: { configurable: true, value(this: HTMLDialogElement) { this.open = true; } },
@@ -190,21 +203,21 @@ describe('US-04', () => {
 
 describe('US-05', () => {
   it('confirma, cancela y reinicia el diálogo sin operaciones destructivas ni cierre de sesión', async () => {
-    const deleteProfile = vi.spyOn(api, 'deleteProfile').mockResolvedValue({ status: 'pending' });
+    const deleteProfile = vi.spyOn(api, 'deleteProfile').mockResolvedValue({ status: 'pending', statusToken: 'fixture' });
     try {
       openProfile();
       const entry = await screen.findByRole('button', { name: 'Eliminar cuenta' });
       fireEvent.click(entry);
-      expect(screen.getByRole('dialog', { name: 'Eliminar cuenta' })).toHaveAccessibleDescription(/todavía no está disponible/);
+      expect(screen.getByRole('dialog', { name: 'Eliminar cuenta' })).toHaveAccessibleDescription(/Esta acción es definitiva/);
       expect(screen.getByText(/perderás el acceso a TeamSpeak/)).toBeVisible();
       expect(screen.getByRole('button', { name: 'Cancelar' })).toHaveFocus();
       const confirmation = screen.getByRole('checkbox', { name: /Entiendo las consecuencias/ });
       const destructive = screen.getByRole('button', { name: 'Eliminar mi cuenta' });
       expect(confirmation).not.toBeChecked();
+      expect(destructive).toBeDisabled();
       fireEvent.click(confirmation);
       expect(confirmation).toBeChecked();
-      expect(destructive).toBeDisabled();
-      fireEvent.click(destructive);
+      expect(destructive).toBeEnabled();
       fireEvent.click(confirmation);
       expect(confirmation).not.toBeChecked();
       fireEvent.click(confirmation);
@@ -224,5 +237,297 @@ describe('US-05', () => {
     } finally {
       deleteProfile.mockRestore();
     }
+  });
+
+  it('espera completed por token, conserva sesión en pending y navega al login', async () => {
+    mocks.deleteAccount.mockResolvedValueOnce({ status: 'pending', statusToken: 'fixture-receipt' });
+    const status = vi.spyOn(api, 'getDeletionStatus').mockResolvedValueOnce({ status: 'completed' });
+    try {
+      openProfile();
+      fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+      fireEvent.click(screen.getByRole('checkbox'));
+      click('Eliminar mi cuenta');
+      expect(await screen.findByText(/eliminación aún está pendiente/)).toBeVisible();
+      expect(mocks.logout).not.toHaveBeenCalled();
+      click('Consultar estado');
+      expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
+      expect(status).toHaveBeenCalledWith('fixture-receipt', expect.any(AbortSignal));
+      expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+      expect(mocks.logout).toHaveBeenCalledOnce();
+      expect(mocks.setUser).toHaveBeenCalledWith(null);
+    } finally {
+      status.mockRestore();
+    }
+  });
+
+  it('navega al login cuando el DELETE confirma completed y Firebase cierra la sesión', async () => {
+    mocks.deleteAccount.mockResolvedValueOnce({ status: 'completed', statusToken: 'fixture' });
+    openProfile();
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    click('Eliminar mi cuenta');
+    expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
+    expect(mocks.logout).toHaveBeenCalledOnce();
+    expect(mocks.setUser).toHaveBeenLastCalledWith(null);
+    expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+  });
+
+  it.each(['DELETE', 'seguimiento'])('conserva completed de %s si falla logout y reintenta solo la limpieza', async source => {
+    mocks.deleteAccount.mockResolvedValueOnce({
+      status: source === 'DELETE' ? 'completed' : 'pending', statusToken: 'fixture',
+    });
+    const status = vi.spyOn(api, 'getDeletionStatus').mockResolvedValueOnce({ status: 'completed' });
+    let finish!: () => void;
+    mocks.logout.mockRejectedValueOnce(new Error('falló el cierre local')).mockImplementationOnce(
+      () => new Promise<void>(resolve => { finish = () => { mocks.signedOut = true; resolve(); }; }),
+    );
+    try {
+      const { router } = openProfile();
+      const navigation = vi.spyOn(router, 'navigate');
+      fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+      fireEvent.click(screen.getByRole('checkbox'));
+      click('Eliminar mi cuenta');
+      if (source === 'seguimiento') {
+        fireEvent.click(await screen.findByRole('button', { name: 'Consultar estado' }));
+      }
+      expect(await screen.findByText(/problema al cerrar la sesión en este dispositivo/)).toBeVisible();
+      expect(screen.getByText('El servidor confirmó la eliminación de tu cuenta.')).toBeVisible();
+      expect(screen.queryByText(/el resultado de la eliminación sigue sin confirmarse/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Eliminar mi cuenta' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Consultar estado' })).not.toBeInTheDocument();
+      expect(navigation).not.toHaveBeenCalled();
+      expect(mocks.clearCache).toHaveBeenCalled();
+      const retry = screen.getByRole('button', { name: 'Reintentar cierre de sesión' });
+      fireEvent.click(retry);
+      fireEvent.click(retry);
+      expect(mocks.logout).toHaveBeenCalledTimes(2);
+      await act(async () => finish());
+      expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
+      expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+      expect(status).toHaveBeenCalledTimes(source === 'seguimiento' ? 1 : 0);
+      expect(navigation).toHaveBeenCalledOnce();
+    } finally {
+      status.mockRestore();
+    }
+  });
+
+  it('reintenta solo la navegación si el login no se pudo abrir', async () => {
+    mocks.deleteAccount.mockResolvedValueOnce({ status: 'completed', statusToken: 'fixture' });
+    const { router } = openProfile(true);
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    click('Eliminar mi cuenta');
+    expect(await screen.findByText(/no pudimos abrir el inicio de sesión/)).toBeVisible();
+    expect(screen.getByText('El servidor confirmó la eliminación de tu cuenta.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Reintentar cierre de sesión' })).not.toBeInTheDocument();
+    click('Ir al inicio de sesión');
+    expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
+    expect(mocks.logout).toHaveBeenCalledOnce();
+    expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+    expect(router.navigate).toHaveBeenCalledTimes(2);
+  });
+
+  it('descarta la confirmación de la cuenta anterior antes de limpiar otra sesión', async () => {
+    let finish!: (value: { status: string; statusToken: string }) => void;
+    mocks.deleteAccount.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const { router } = openProfile();
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    click('Eliminar mi cuenta');
+    mocks.identity = { uid: 'u2', providerData: [{ providerId: 'password' }] };
+    await act(async () => finish({ status: 'completed', statusToken: 'fixture' }));
+    expect(mocks.logout).not.toHaveBeenCalled();
+    expect(mocks.clearCache).not.toHaveBeenCalled();
+    expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+    expect(router.state.location.pathname).toBe('/');
+  });
+
+  it('requiere contraseña tras AUTH_RECENT_REQUIRED y conserva la sesión ante credenciales rechazadas', async () => {
+    mocks.deleteAccount.mockRejectedValueOnce(error(401, 'AUTH_RECENT_REQUIRED'))
+      .mockResolvedValueOnce({ status: 'completed', statusToken: 'fixture' });
+    mocks.reauthenticateDeletion.mockRejectedValueOnce(new Error('Contraseña incorrecta')).mockResolvedValueOnce(undefined);
+    openProfile();
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    click('Eliminar mi cuenta');
+    expect(await screen.findByLabelText('Contraseña actual')).toBeVisible();
+    change('Contraseña actual', 'incorrecta');
+    fireEvent.submit(screen.getByLabelText('Contraseña actual').closest('form')!);
+    expect(await screen.findByText('Contraseña incorrecta')).toBeVisible();
+    expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+    expect(mocks.logout).not.toHaveBeenCalled();
+    change('Contraseña actual', 'fixture-password');
+    fireEvent.submit(screen.getByLabelText('Contraseña actual').closest('form')!);
+    expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
+    expect(mocks.reauthenticateDeletion).toHaveBeenLastCalledWith(mocks.identity, 'password', 'fixture-password');
+    expect(mocks.deleteAccount).toHaveBeenCalledTimes(2);
+  });
+
+  it('usa Bearer tras una respuesta perdida y muestra bloqueo sin repetir DELETE', async () => {
+    mocks.deleteAccount.mockRejectedValueOnce(new Error('respuesta perdida'));
+    const status = vi.spyOn(api, 'getDeletionStatus').mockResolvedValueOnce({ status: 'blocked' });
+    try {
+      openProfile();
+      fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+      fireEvent.click(screen.getByRole('checkbox'));
+      click('Eliminar mi cuenta');
+      expect(await screen.findByText('El resultado de la eliminación sigue sin confirmarse.')).toBeVisible();
+      click('Consultar estado');
+      expect(await screen.findByText('El proceso está bloqueado. Contacta a soporte.')).toBeVisible();
+      expect(status).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
+      expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+      expect(mocks.logout).not.toHaveBeenCalled();
+    } finally {
+      status.mockRestore();
+    }
+  });
+
+
+  it('trata 409 ACCOUNT_DELETION_BLOCKED como bloqueo sin terminar la sesión', async () => {
+    mocks.deleteAccount.mockRejectedValueOnce(error(409, 'ACCOUNT_DELETION_BLOCKED'));
+    openProfile();
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar cuenta' }));
+    fireEvent.click(screen.getByRole('checkbox'));
+    click('Eliminar mi cuenta');
+    expect(await screen.findByRole('alert')).toHaveTextContent('El proceso está bloqueado');
+    expect(screen.getByRole('link', { name: 'Ir a ayuda' })).toHaveAttribute('href', '/ayuda');
+    expect(screen.queryByRole('button', { name: 'Eliminar mi cuenta' })).not.toBeInTheDocument();
+    expect(mocks.logout).not.toHaveBeenCalled();
+    expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+  });
+
+});
+
+describe('Cambio de correo', () => {
+  it('solicita reautenticación, distingue verificación pendiente y conserva el borrador de perfil', async () => {
+    mocks.canChangeEmail = true;
+    const target = 'nuevo@example.test';
+    mocks.requestEmail.mockRejectedValueOnce(error(401, 'AUTH_RECENT_REQUIRED')).mockResolvedValueOnce(undefined);
+    mocks.confirmEmail.mockResolvedValueOnce(undefined).mockResolvedValueOnce({
+      profile: { ...profile, email: target }, user: { id: 'u1', email: target }, isCurrent: () => true,
+    });
+    await edit();
+    change('Nombre', 'Borrador');
+    change('Nuevo correo electrónico', profile.email);
+    click('Enviar verificación');
+    expect(screen.getByRole('alert')).toHaveTextContent('debe ser diferente');
+    expect(mocks.requestEmail).not.toHaveBeenCalled();
+    change('Nuevo correo electrónico', target);
+    click('Enviar verificación');
+    const password = await screen.findByLabelText('Contraseña actual');
+    fireEvent.change(password, { target: { value: 'fixture-password' } });
+    click('Enviar verificación');
+    const check = await screen.findByRole('button', { name: 'Comprobar verificación' });
+    expect(screen.queryByText(/fue verificado y sincronizado/)).not.toBeInTheDocument();
+    expect(mocks.requestEmail).toHaveBeenLastCalledWith('u1', target, expect.any(AbortSignal), 'fixture-password', expect.any(Function));
+    fireEvent.click(check);
+    expect(await screen.findByText('El cambio todavía está pendiente de verificación.')).toBeVisible();
+    fireEvent.click(check);
+    expect(await screen.findByText(/fue verificado y sincronizado/)).toBeVisible();
+    expect(screen.getByLabelText('Correo electrónico', { exact: true })).toHaveValue(target);
+    expect(screen.getByLabelText('Nombre', { exact: true })).toHaveValue('Borrador');
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['perdido', 'vencido'])('recupera un enlace %s con un único reenvío explícito', async () => {
+    mocks.canChangeEmail = true;
+    let finish!: () => void;
+    mocks.requestEmail.mockResolvedValueOnce(undefined).mockImplementationOnce(
+      () => new Promise<void>(resolve => { finish = resolve; }),
+    );
+    mocks.confirmEmail.mockResolvedValueOnce(undefined);
+    await edit();
+    change('Nuevo correo electrónico', 'nuevo@example.test');
+    click('Enviar verificación');
+    const check = await screen.findByRole('button', { name: 'Comprobar verificación' });
+    fireEvent.click(check);
+    expect(await screen.findByText('El cambio todavía está pendiente de verificación.')).toBeVisible();
+    const resend = screen.getByRole('button', { name: 'Enviar otra verificación' });
+    expect(screen.getByRole('button', { name: 'Cambiar dirección' })).toBeEnabled();
+    fireEvent.click(resend);
+    expect(resend).toBeDisabled();
+    fireEvent.submit(resend.closest('form')!);
+    expect(mocks.requestEmail).toHaveBeenCalledTimes(2);
+    await act(async () => finish());
+    expect(await screen.findByText('Se solicitó otra verificación para este correo.')).toBeVisible();
+    expect(mocks.requestEmail).toHaveBeenLastCalledWith('u1', 'nuevo@example.test', expect.any(AbortSignal), undefined, expect.any(Function));
+    expect(screen.queryByText(/fue verificado y sincronizado/)).not.toBeInTheDocument();
+  });
+
+  it('permite corregir la dirección y salir sin alterar el borrador ni revocar enlaces', async () => {
+    mocks.canChangeEmail = true;
+    mocks.requestEmail.mockResolvedValue(undefined);
+    mocks.confirmEmail.mockResolvedValueOnce(undefined);
+    await edit();
+    change('Nombre', 'Borrador');
+    change('Nuevo correo electrónico', 'equivocado@example.test');
+    click('Enviar verificación');
+    fireEvent.click(await screen.findByRole('button', { name: 'Cambiar dirección' }));
+    expect(screen.getByLabelText('Nuevo correo electrónico')).toHaveValue('equivocado@example.test');
+    expect(screen.getByText('Los enlaces enviados anteriormente pueden seguir vigentes.')).toBeVisible();
+    change('Nuevo correo electrónico', 'correcto@example.test');
+    click('Enviar verificación');
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprobar verificación' }));
+    expect(await screen.findByText('El cambio todavía está pendiente de verificación.')).toBeVisible();
+    expect(mocks.confirmEmail).toHaveBeenCalledWith('u1', 'correcto@example.test');
+    click('Salir del cambio de correo');
+    expect(screen.queryByRole('button', { name: 'Comprobar verificación' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Nombre', { exact: true })).toHaveValue('Borrador');
+    expect(mocks.update).not.toHaveBeenCalled();
+    click('Abrir cambio de correo');
+    expect(screen.getByLabelText('Nuevo correo electrónico')).toHaveValue('');
+    expect(mocks.requestEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it('conserva la recuperación ante reautenticación y límite de frecuencia al reenviar', async () => {
+    mocks.canChangeEmail = true;
+    mocks.requestEmail.mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(error(401, 'AUTH_RECENT_REQUIRED'))
+      .mockRejectedValueOnce(new Error('Espera unos minutos e inténtalo de nuevo.'))
+      .mockResolvedValueOnce(undefined);
+    await edit();
+    change('Nuevo correo electrónico', 'nuevo@example.test');
+    click('Enviar verificación');
+    fireEvent.click(await screen.findByRole('button', { name: 'Enviar otra verificación' }));
+    let password = await screen.findByLabelText('Contraseña actual');
+    fireEvent.change(password, { target: { value: 'fixture-password' } });
+    click('Enviar otra verificación');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Espera unos minutos');
+    password = screen.getByLabelText('Contraseña actual');
+    expect(password).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Cambiar dirección' })).toBeEnabled();
+    fireEvent.change(password, { target: { value: 'fixture-password' } });
+    click('Enviar otra verificación');
+    expect(await screen.findByText('Se solicitó otra verificación para este correo.')).toBeVisible();
+    expect(mocks.requestEmail).toHaveBeenCalledTimes(4);
+  });
+
+  it('descarta una comprobación tardía al cambiar de identidad', async () => {
+    const onConfirmed = vi.fn();
+    const onBusy = vi.fn();
+    const props = { supported: true, hidden: false, onConfirmed, onBusy };
+    const target = 'nuevo@example.test';
+    const result = { profile: { ...profile, email: target }, user: { id: 'u1', email: target }, isCurrent: () => true };
+    let finish!: (value: typeof result) => void;
+    mocks.requestEmail.mockResolvedValueOnce(undefined);
+    mocks.confirmEmail.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const { rerender } = render(<ProfileEmailChange key="u1" uid="u1" email={profile.email} {...props} />);
+    change('Nuevo correo electrónico', target);
+    click('Enviar verificación');
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprobar verificación' }));
+    expect(screen.getByText('Comprobando verificación…')).toBeVisible();
+    rerender(<ProfileEmailChange key="u2" uid="u2" email="otra@example.test" {...props} />);
+    await act(async () => finish(result));
+    expect(onConfirmed).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Nuevo correo electrónico')).toHaveValue('');
+    expect(screen.queryByText(/fue verificado y sincronizado/)).not.toBeInTheDocument();
+  });
+
+  it('explica la restricción a cuentas sin contraseña vinculada', async () => {
+    mocks.canChangeEmail = false;
+    await edit();
+    expect(screen.getByText(/método de autenticación no admite/)).toBeVisible();
+    expect(screen.queryByLabelText('Nuevo correo electrónico')).not.toBeInTheDocument();
+    expect(mocks.requestEmail).not.toHaveBeenCalled();
   });
 });

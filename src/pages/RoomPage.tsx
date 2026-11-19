@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { Link, useParams } from 'react-router-dom';
 import { firebaseAuth } from '../firebase';
-import { api, ApiError, type Message, type Room } from '../services/api';
+import { api, type Message, type Room } from '../services/api';
 import { useAuth } from '../auth/AuthContext';
 import { PageTitle } from '../components/PageTitle';
 type RoomView = 'grid' | 'screen-share';
@@ -92,7 +92,11 @@ function RoomView({ roomId }: { roomId: string }) {
         socketRef.current = socket;
         function denyOrFail(code: string | undefined, fallback: string) {
           const denied = code !== undefined && authorizationCodes.has(code);
-          failRealtime(denied ? 'Tu sesión no tiene autorización para el ingreso en tiempo real.' : fallback, denied);
+          const message = code === 'ROOM_NOT_FOUND' ? 'La sala no existe.'
+            : code === 'ROOM_ACCESS_DENIED' ? 'No tienes acceso a esta sala.'
+            : code === 'AUTHORIZATION_UNAVAILABLE' ? 'No pudimos verificar el acceso a la sala. Inténtalo de nuevo.'
+            : denied ? 'Tu sesión no tiene autorización para el ingreso en tiempo real.' : fallback;
+          failRealtime(message, denied);
           if (denied) socket.disconnect();
         }
 
@@ -136,6 +140,14 @@ function RoomView({ roomId }: { roomId: string }) {
           confirmedParticipants = ids;
           confirmJoin();
         });
+        socket.on('room:access-revoked', (event: { roomId?: string; code?: string } | undefined) => {
+          if (!valid() || event?.roomId !== roomId || (!joined && !joining)) return;
+          if (event.code !== 'ROOM_NOT_FOUND' && event.code !== 'ROOM_ACCESS_DENIED') return;
+          setMic(false);
+          setCamera(false);
+          setSharing(false);
+          denyOrFail(event.code, '');
+        });
         socket.on('disconnect', () => {
           if (!valid()) return;
           resetJoin();
@@ -154,7 +166,7 @@ function RoomView({ roomId }: { roomId: string }) {
             setRealtime('reconnecting');
             setCanRetry(false);
           } else {
-            failRealtime('No pudimos conectar con el servicio en tiempo real.');
+            denyOrFail(error.data?.code, 'No pudimos conectar con el servicio en tiempo real.');
           }
         });
         const reconnectFailed = () => {
@@ -170,9 +182,10 @@ function RoomView({ roomId }: { roomId: string }) {
             setNotice('No pudimos completar la operación en tiempo real.');
           }
         });
-        socket.on('chat:message', (value: { authorId: string; text: string; createdAt: string }) => {
-          if (!valid() || !joined || value.authorId === currentUserId) return;
-          setMessages(current => [...current, { id: `live-${value.authorId}-${value.createdAt}`, authorId: value.authorId, sender: `Usuario ${value.authorId.slice(0, 6)}`, initials: 'US', time: new Date(value.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), text: value.text }]);
+        socket.on('chat:message', (value: Omit<Message, 'id' | 'roomId'> & { messageId?: string }) => {
+          if (!valid() || !joined || !value.messageId) return;
+          const message = fromMessage({ ...value, id: value.messageId, roomId }, currentUserId);
+          setMessages(current => current.some(item => item.id === message.id) ? current : [...current, message]);
         });
         function addParticipant(participantId: string) {
           setParticipants(current => current.some(item => item.id === participantId) ? current :
@@ -205,7 +218,24 @@ function RoomView({ roomId }: { roomId: string }) {
   }, [currentUserId, roomId, user?.name, retry]);
   const connected = realtime === 'joined';
   const realtimeLabel = { connecting: 'Conectando…', joining: 'Confirmando ingreso…', joined: 'Ingreso confirmado', reconnecting: 'Reconectando…', error: 'Realtime no disponible' }[realtime];
-  async function sendMessage(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const text = draft.trim(); if (!connected || !text || text.length > 2000 || !socketRef.current) return; setDraft(''); try { const saved = await api.createMessage(roomId, { text }); setMessages(current => [...current, fromMessage(saved, currentUserId)]); socketRef.current.emit('chat:send', { text }); } catch (error) { setNotice(error instanceof ApiError ? error.message : 'No pudimos enviar el mensaje.'); setDraft(text); } }
+  function sendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = draft.trim();
+    const socket = socketRef.current;
+    const identity = firebaseAuth.currentUser;
+    if (!connected || !socket?.connected || !text || text.length > 2000) return;
+    const connectionId = socket.id;
+    setDraft('');
+    socket.volatile.timeout(12_000).emit('chat:send', { text }, (error: Error | null, ack?: { ok: boolean }) => {
+      if (socketRef.current !== socket || firebaseAuth.currentUser !== identity ||
+          !socket.connected || socket.id !== connectionId) return;
+      if (error) setNotice('No pudimos confirmar el envío. Revisa el historial antes de volver a enviarlo.');
+      else if (!ack?.ok) {
+        setNotice('No pudimos enviar el mensaje.');
+        setDraft(current => current || text);
+      }
+    });
+  }
   function emitMedia(nextMic = mic, nextCamera = camera) { socketRef.current?.emit('media:state', { microphone: nextMic, camera: nextCamera }); }
   if (status === 'loading') return <section className="room-loading-screen" role="status" aria-live="polite"><div className="room-loading-card"><div className="room-loading-mark" aria-hidden="true">S</div><p className="room-loading-eyebrow">TeamSpeak · Sala</p><h1>Preparando tu sala</h1><p className="room-loading-description">Estamos verificando el acceso a la sala.</p><div className="room-loading-progress" aria-hidden="true"><span /></div><p className="room-loading-status">Cargando sala…</p><Link className="button secondary room-loading-back" to="/dashboard">Volver a mis salas</Link></div></section>;
   if (status === 'error' || !room) return <section className="page-panel" role="alert"><PageTitle title="No pudimos abrir la sala" /><p>{notice}</p><Link className="button secondary" to="/dashboard">Volver a mis salas</Link></section>;
