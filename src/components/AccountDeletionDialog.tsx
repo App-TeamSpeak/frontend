@@ -317,7 +317,7 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
     <DeletionCompleted.Provider value={phase === 'completed' && !visible && !user}>
       <OpenTracking.Provider value={tracking}>{children}</OpenTracking.Provider>
     </DeletionCompleted.Provider>
-    <dialog ref={dialog} className="room-management-dialog user-profile-dialog profile-delete-dialog"
+    <dialog ref={dialog} className="room-management-dialog user-profile-dialog profile-delete-dialog" data-phase={phase}
       aria-labelledby={`${id}-title`} aria-describedby={`${id}-warning`}
       onCancel={event => { if (operation.current || attempt.current?.completed) event.preventDefault(); }}
       onClose={() => {
@@ -325,14 +325,15 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
         if (trigger.current?.isConnected) trigger.current.focus();
       }}>
       <h2 id={`${id}-title`}>Eliminar cuenta</h2>
-      <p id={`${id}-warning`}>Si eliminas tu cuenta, perderás el acceso a TeamSpeak. Esta acción es definitiva.</p>
+      <p id={`${id}-warning`}>{phase === 'sending' ? 'Estamos procesando tu solicitud.' :
+        'Si eliminas tu cuenta, perderás el acceso a TeamSpeak. Esta acción es definitiva.'}</p>
       {showConfirmation && <label className="profile-delete-confirmation">
         <input type="checkbox" checked={checked} disabled={busy} onChange={event => setChecked(event.target.checked)} />
         <span>Entiendo las consecuencias de eliminar mi cuenta</span>
       </label>}
       {phase === 'reauth' && <>
         <p>Confirma tu identidad con un método vinculado a tu cuenta.</p>
-        {provider.some(entry => entry.providerId === 'password') && <form onSubmit={event => { event.preventDefault(); void start('password'); }}>
+        {provider.some(entry => entry.providerId === 'password') && <form className="form-field" onSubmit={event => { event.preventDefault(); void start('password'); }}>
           <label htmlFor={`${id}-password`}>Contraseña actual</label>
           <input id={`${id}-password`} ref={passwordInput} type="password" autoComplete="current-password" required disabled={busy} />
           <button className="button secondary" type="submit" disabled={busy || !checked}>Confirmar con contraseña</button>
@@ -340,18 +341,18 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
         {provider.some(entry => entry.providerId === 'google.com') && <button className="button secondary" type="button"
           disabled={busy || !checked} onClick={() => void start('google.com')}>Reautenticar con Google</button>}
       </>}
-      {busy && phase !== 'completed' && <p role="status">{phase === 'sending' ? 'Eliminando cuenta…' : canCheck ? 'Consultando estado…' : 'Comprobando identidad…'}</p>}
-      {phase === 'pending' && <p role="status">La solicitud fue aceptada. La eliminación aún está pendiente.</p>}
-      {phase === 'unknown' && <p role="status">El resultado de la eliminación sigue sin confirmarse.</p>}
-      {phase === 'blocked' && <p role="alert">El proceso está bloqueado. Contacta a soporte.</p>}
-      {phase === 'completed' && <p role="status">El servidor confirmó la eliminación de tu cuenta.</p>}
+      {busy && phase !== 'completed' && <p className="profile-delete-status" role="status">{phase === 'sending' ? 'Eliminando cuenta…' : canCheck ? 'Consultando estado…' : 'Comprobando identidad…'}</p>}
+      {phase === 'pending' && <p className="profile-delete-status" role="status">La solicitud fue aceptada. La eliminación aún está pendiente.</p>}
+      {phase === 'unknown' && <p className="profile-delete-status" role="status">El resultado de la eliminación sigue sin confirmarse.</p>}
+      {phase === 'blocked' && <p className="profile-delete-status" role="alert">El proceso está bloqueado. Contacta a soporte.</p>}
+      {phase === 'completed' && <p className="profile-delete-status" role="status">El servidor confirmó la eliminación de tu cuenta.</p>}
       {phase === 'completed' && busy && <p role="status">Finalizando la sesión local…</p>}
       {localFailure === 'logout' && <p role="alert">Tu cuenta fue eliminada, pero ocurrió un problema al cerrar la sesión en este dispositivo.</p>}
       {localFailure === 'navigation' && <p role="alert">La sesión está cerrada, pero no pudimos abrir el inicio de sesión.</p>}
-      {error && <p role="alert">{error}</p>}
+      {error && <p className="profile-delete-status" role="alert">{error}</p>}
       {(phase === 'unknown' || phase === 'blocked') && <Link to="/ayuda" onClick={() => dialog.current?.close()}>Ir a ayuda</Link>}
       <div className="room-management-dialog-actions">
-        {phase !== 'completed' && <button ref={cancel} className="button secondary" type="button" disabled={busy}
+        {phase !== 'completed' && phase !== 'sending' && <button ref={cancel} className="button secondary" type="button" disabled={busy}
           onClick={() => dialog.current?.close()}>{showConfirmation ? 'Cancelar' : 'Cerrar'}</button>}
         {phase === 'completed' && !busy && <button className="button secondary" type="button"
           onClick={() => void retryLocal()}>{localFailure === 'logout' ? 'Reintentar cierre de sesión' : 'Ir al inicio de sesión'}</button>}

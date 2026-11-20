@@ -233,6 +233,12 @@ function ProfileContent({ uid }: { uid: string }) {
   }
 
   const name = profile ? `${profile.nombre} ${profile.apellido}` : '';
+  const showSessionIdentity = query.status === 'loading' || query.status === 'error';
+  const identityName = profile ? name : showSessionIdentity && user?.id === uid
+    ? [user.name, user.apellido].filter(Boolean).join(' ') : '';
+  const avatar = profile ? profile.avatarUrl : user?.avatarUrl;
+  const initials = profile ? `${profile.nombre[0] ?? ''}${profile.apellido[0] ?? ''}`
+    : identityName.split(/\s+/).slice(0, 2).map(part => part[0]).join('');
   return <section className="user-profile">
     <div className="user-profile-heading">
       <div><PageTitle title="Mi perfil" /><p>{editing ? 'Actualiza tu información personal.' : 'Consulta y administra los datos de tu cuenta.'}</p></div>
@@ -241,13 +247,22 @@ function ProfileContent({ uid }: { uid: string }) {
     <div className="user-profile-grid">
       <section className="user-profile-card" aria-labelledby="profile-heading">
         <h2 id="profile-heading" ref={heading} tabIndex={-1}>{editing ? 'Editar información personal' : 'Información personal'}</h2>
+        {identityName && <div className="user-profile-identity">
+          <span className="user-profile-avatar" aria-hidden="true">
+            {avatar && !avatarFailed ? <img src={avatar} alt="" referrerPolicy="no-referrer" onError={() => setAvatarFailed(true)} /> : initials.toUpperCase()}
+          </span>
+          <strong>{identityName}</strong>
+        </div>}
         {query.status === 'loading' && <div className="user-profile-loading" role="status">
           <p>Cargando perfil…</p>
           <div aria-hidden="true"><span /><span /><span /></div>
         </div>}
         {query.status === 'error' && <>
-          <p className="user-profile-notice user-profile-error" role="alert">{query.message}</p>
-          <button className="button primary" type="button" onClick={() => {
+          <div className="user-profile-notice user-profile-error user-profile-query-error" role="alert">
+            <strong>No pudimos cargar tu perfil</strong>
+            <p>{query.message}</p>
+          </div>
+          <button className="button primary user-profile-retry" type="button" onClick={() => {
             setQuery({ status: 'loading' });
             setAttempt(value => value + 1);
             focusHeading();
@@ -258,13 +273,6 @@ function ProfileContent({ uid }: { uid: string }) {
           <Link to="/completar-username" onClick={() => { if (user?.username) setUser({ ...user, username: undefined }); }}>Completar perfil</Link>
         </div>}
         {profile && <>
-          <div className="user-profile-identity">
-            <span className="user-profile-avatar" aria-hidden="true">
-              {profile.avatarUrl && !avatarFailed ? <img src={profile.avatarUrl} alt="" referrerPolicy="no-referrer" onError={() => setAvatarFailed(true)} /> :
-                `${profile.nombre[0] ?? ''}${profile.apellido[0] ?? ''}`.toUpperCase()}
-            </span>
-            <strong>{name}</strong>
-          </div>
           {draft ? <form onSubmit={save} noValidate>
             <fieldset disabled={saving || saved} aria-busy={saving} className="user-profile-fields">
               {fields.slice(0, 3).map(([field, label]) => <div className="form-field" key={field}>

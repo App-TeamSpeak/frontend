@@ -219,6 +219,7 @@ button:not(:disabled), .button { cursor: pointer; }
 @keyframes dashboard-skeleton-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-shimmer { animation: none; } .skeleton-block { background: #263449; } }
 .room-load-error { display: flex; width: min(600px, 100%); min-height: 380px; align-items: center; justify-content: flex-start; margin: 78px auto 42px; padding: 76px 32px 32px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); flex-direction: column; text-align: center; }
+.room-load-error-summary { display: flex; align-items: center; flex-direction: column; }
 .room-load-error-icon { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
 .room-load-error-icon img { display: block; width: 64px; height: 64px; }
 .room-load-error-icon span { position: absolute; inset: 0; display: grid; place-items: center; color: var(--error); font-family: 'Inter Variable', sans-serif; font-size: 30px; font-weight: 600; line-height: 1; }
@@ -258,7 +259,7 @@ button:not(:disabled), .button { cursor: pointer; }
 .room-card-live img { width: 8px; height: 8px; flex-shrink: 0; }
 .room-card-enter { display: inline-flex; align-items: center; align-self: flex-end; min-height: 34px; margin-top: auto; color: #bfdbfe; font-family: 'Inter Variable', sans-serif; font-size: 13px; font-weight: 600; }
 .dashboard-avatar { display: grid; width: 40px; height: 40px; flex-shrink: 0; place-items: center; border-radius: 20px; background: #dce8ff; color: #2857c5; font-family: 'Inter Variable', sans-serif; font-size: 14px; font-weight: 600; }
-.room-management-dialog-backdrop { position: fixed; z-index: 10; inset: 0; display: grid; padding: 24px; place-items: center; background: var(--overlay); }
+.room-management-dialog-backdrop { position: fixed; z-index: 10; inset: 0; display: grid; padding: 24px; place-items: safe center; overflow: auto; background: var(--overlay); }
 .room-management-dialog { width: min(420px, 100%); padding: 28px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: 0 24px 64px var(--dialog-shadow); }
 .room-management-dialog h2 { font-size: 24px; }
 .room-management-dialog > p:not(.visually-hidden) { margin-top: 12px; color: var(--muted); font-size: 15px; }
@@ -268,9 +269,9 @@ button:not(:disabled), .button { cursor: pointer; }
 .room-management-dialog-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
 .room-management-dialog-danger { min-height: 48px; border-color: var(--error); background: var(--danger-action); color: var(--text); }
 .room-management-dialog-danger:hover { background: var(--danger-action-hover); }
-.room-management-dialog-create { width: min(500px, 100%); min-height: 420px; padding: 28px 32px 20px; border-radius: 20px; }
+.room-management-dialog-create { width: min(500px, 100%); min-height: 330px; padding: 28px 32px 24px; border-radius: 20px; }
 .room-management-dialog-create h2 { font-size: 26px; line-height: 32px; }
-.room-management-dialog-create form { margin-top: 24px; }
+.room-management-dialog-create form { margin-top: 36px; }
 .room-management-dialog-create .form-field { margin-bottom: 20px; }
 .room-management-dialog-create .form-field label { margin-bottom: 8px; font-size: 14px; line-height: 18px; }
 .room-management-dialog-create .form-field input { height: 52px; border-radius: 9px; background: var(--surface); }
@@ -316,6 +317,18 @@ button:not(:disabled), .button { cursor: pointer; }
 .room-management-dialog-delete .room-management-dialog-actions .secondary { width: 120px; border: 2px solid var(--link); color: var(--text); }
 .room-management-dialog-delete .room-management-dialog-danger { width: 148px; min-height: 44px; border-color: var(--error-strong); background: var(--danger-action); }
 .profile-delete-dialog { width: min(500px, calc(100% - 40px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 32px; border-color: var(--error-strong); border-radius: 20px; }
+.profile-delete-dialog[open]:is([data-phase=confirm], [data-phase=sending]) { display: flex; min-height: min(430px, calc(100dvh - 32px)); flex-direction: column; }
+.profile-delete-dialog[data-phase=confirm] .profile-delete-confirmation { margin-top: auto; }
+.profile-delete-dialog[data-phase=confirm] .room-management-dialog-actions { margin-top: auto; }
+.profile-delete-dialog[data-phase=confirm] > p,
+.profile-delete-dialog[data-phase=sending] > p { margin-bottom: 24px; }
+.profile-delete-dialog[data-phase=sending] .room-management-dialog-actions:empty { display: none; }
+.profile-delete-dialog[data-phase=sending] .profile-delete-status { margin-block: auto; }
+.profile-delete-dialog .profile-delete-status { padding: 12px 16px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-soft); color: var(--text); }
+.profile-delete-dialog .profile-delete-status[role=alert] { border-color: var(--error-strong); background: var(--danger-surface); color: var(--error); }
+.profile-delete-dialog[data-phase=completed] .profile-delete-status { border-color: #286a56; color: var(--success); }
+.profile-delete-dialog form .button { margin-top: 12px; }
+.profile-delete-dialog > a { display: inline-block; margin-top: 12px; color: var(--link); text-decoration: underline; }
 .profile-delete-dialog h2 { font-size: 26px; line-height: 32px; }
 .profile-delete-dialog > p { margin-top: 16px; color: var(--muted); }
 .profile-delete-confirmation { display: flex; align-items: center; gap: 12px; margin-top: 24px; padding: 14px 16px; min-height: 58px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-soft); color: var(--text); cursor: pointer; }
@@ -379,7 +392,7 @@ button:not(:disabled), .button { cursor: pointer; }
 @media (max-width: 767px) { .dashboard-shell .header-inner, .panel-shell .header-inner { align-items: center; gap: 10px 12px; padding-inline: 16px; } .dashboard-shell .brand, .panel-shell .brand { min-width: 0; gap: 10px; font-size: 16px; } .dashboard-shell .brand span, .panel-shell .brand span { width: 32px; height: 32px; flex: 0 0 32px; } .dashboard-shell .site-header nav, .panel-shell .site-header nav { order: 3; width: 100%; flex: 1 0 100%; } .dashboard-shell .site-header nav ul, .panel-shell .site-header nav ul { justify-content: center; gap: 8px 28px; } .header-profile-actions { display: flex; width: auto; height: 40px; align-items: center; gap: 8px; flex: 0 0 auto; } .header-logout-icon { position: static; flex: 0 0 40px; } }
 @media (max-width: 767px) { .help-page { padding: 24px 20px 28px; } .help-intro > p:last-child { font-size: 16px; line-height: 24px; } .help-navigation { display: grid; grid-template-columns: 1fr 1fr; } .help-navigation a { justify-content: center; padding-inline: 8px; text-align: center; } .help-grid { grid-template-columns: 1fr; gap: 12px; } .help-section { padding: 20px; } }
 @media (max-width: 767px) { .room-management-dialog-edit-error { min-height: 0; } .room-management-dialog-field-error { overflow-wrap: anywhere; } }
-@media (max-width: 767px) { .room-management-dialog-create { min-height: 0; padding: 24px 20px; } .room-management-dialog-create .room-management-dialog-actions { flex-direction: column-reverse; } .room-management-dialog-create .room-management-dialog-actions .button { width: 100%; } .room-privacy-option { align-items: flex-start; padding: 12px; } }
+@media (max-width: 767px) { .room-management-dialog-create { min-height: min(360px, calc(100dvh - 32px)); padding: 24px; } .room-management-dialog-create .room-management-dialog-actions { flex-wrap: wrap; } .room-management-dialog-create .room-management-dialog-actions .button { flex: 1 1 126px; width: auto; height: auto; min-height: 46px; } .room-privacy-option { align-items: flex-start; padding: 12px; } }
 @media (max-width: 767px) { .room-management-dialog-create-error { min-height: 0; } .room-management-dialog-create .room-management-dialog-field-error { overflow-wrap: anywhere; } }
 @media (max-width: 767px) { .room-management-dialog-join { min-height: 0; padding: 24px 20px; } .room-management-dialog-join form { margin-top: 28px; } .room-management-dialog-join .room-management-dialog-actions { flex-direction: column-reverse; } .room-management-dialog-join .room-management-dialog-actions .button { width: 100%; } .room-management-dialog-join-helper { overflow-wrap: anywhere; } }
 @media (max-width: 767px) { .room-management-dialog-delete { min-height: 0; padding: 24px 20px; } .room-management-dialog-delete .room-management-dialog-actions { flex-direction: column-reverse; margin-top: 28px; } .room-management-dialog-delete .room-management-dialog-actions .button { width: 100%; } .room-management-dialog-warning { margin-top: 20px; } }
@@ -656,28 +669,32 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .user-profile .button { min-height: 44px; padding-block: 10px; border-radius: 9px; }
 .user-profile-actions .button { min-width: min(100%, 178px); }
 .user-profile-actions .primary { min-width: min(100%, 206px); }
-.user-profile-loading { margin: 24px 0; color: var(--muted); }
-.user-profile-loading > div { display: grid; gap: 18px; margin-top: 24px; }
-.user-profile-loading span { display: block; height: 24px; border-radius: 7px; background: var(--subtle); }
-.user-profile-loading span:nth-child(2) { width: 80%; }
-.user-profile-loading span:nth-child(3) { width: 60%; }
+.user-profile-loading { margin: 28px 0; color: var(--muted); }
+.user-profile-loading > div { display: grid; gap: 24px; margin-top: 12px; }
+.user-profile-loading span { display: block; height: 48px; border-radius: 10px; background: #263449; }
 .user-profile-notice { margin: 24px 0 16px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; }
+.user-profile-query-error { margin-block: 32px 26px; }
+.user-profile-query-error p { margin-top: 8px; color: var(--muted); }
+.user-profile-retry { min-width: min(168px, 100%); }
 .user-profile-notice a { color: var(--link); text-decoration: underline; }
 .user-profile-error { border-color: var(--error-strong); background: var(--danger-surface); color: var(--error); }
 .user-profile-saving { border-color: var(--primary); background: var(--surface-soft); }
 .user-profile-success { border-color: #286a56; background: #103c30; color: var(--success); }
 .user-profile-dialog { position: fixed; inset: 0; margin: auto; max-width: calc(100% - 32px); color: var(--text); }
 .user-profile-dialog::backdrop { background: var(--overlay); }
-.user-profile-discard { display: none; width: min(500px, 100%); min-height: 355px; }
+.user-profile-discard { display: none; width: min(500px, 100%); min-height: min(355px, calc(100dvh - 32px)); max-height: calc(100dvh - 32px); overflow: auto; }
 .user-profile-discard[open] { display: flex; flex-direction: column; }
 .user-profile-discard .room-management-dialog-actions { margin-top: auto; padding-top: 24px; }
-@media (max-width: 767px) {
+@media (max-width: 900px) {
   .user-profile-heading { align-items: start; flex-wrap: wrap; min-height: 0; margin-bottom: 30px; }
   .user-profile-heading h1 { font-size: 28px; }
   .user-profile-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .user-profile-card { padding: 21px; }
   .user-profile-grid > .user-profile-card { min-height: 0; }
-  .user-profile-discard { width: calc(100% - 40px); min-height: 300px; }
+  .user-profile-discard { width: calc(100% - 40px); min-height: min(300px, calc(100dvh - 32px)); }
+  .user-profile-loading span { height: 56px; }
+  .user-profile-loading > div { gap: 20px; }
+  .user-profile-retry { width: 100%; }
   .user-profile-discard .room-management-dialog-actions .button { flex: 1; padding-inline: 8px; }
   .user-profile-avatar { width: 62px; height: 62px; }
   .user-profile-data { margin-bottom: 0; }
@@ -694,11 +711,47 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .room-create-dialog { position: fixed; inset: 0; margin: auto; max-width: calc(100% - 32px); max-height: calc(100dvh - 32px); overflow: auto; color: var(--text); }
 .room-create-dialog::backdrop { background: var(--overlay); }
 .room-create-page { margin: 0 auto; }
-.room-create-note, .room-create-alert, .room-create-success, .room-create-progress, .room-create-review { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); overflow-wrap: anywhere; }
-.room-create-alert { color: var(--error); border-color: var(--error); }
+.room-create-alert, .room-create-success, .room-create-review { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); overflow-wrap: anywhere; }
+.room-create-note, .room-create-progress { margin-block: 12px; color: var(--muted); font-size: 14px; }
+.room-create-alert { color: var(--error); border-color: var(--error-strong); background: var(--danger-surface); }
+.room-create-alert p { margin-top: 6px; color: var(--muted); }
 .room-create-success { color: var(--success); background: #133a2c; border-color: #2a8063; }
 .room-create-review { max-height: 180px; overflow: auto; }
 .room-id-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-block: 12px; overflow-wrap: anywhere; }
 .room-id-actions [role=status]:empty { position: absolute; }
 .room-id-actions .button { min-height: 44px; padding-inline: 12px; }
 .room-create-dialog .form-field input:not([aria-invalid=true]), .room-create-page .form-field input:not([aria-invalid=true]) { border-color: var(--border-strong); }
+
+@media (max-width: 767px) {
+  .dashboard-heading { gap: 20px; }
+  .dashboard-heading .actions { width: 100%; justify-content: flex-end; }
+  .dashboard .actions .primary { min-width: 155px; }
+  .rooms-section[data-state=empty] .rooms-section-heading,
+  .rooms-section[data-state=error] .rooms-section-heading,
+  .dashboard-loading-badge { position: absolute; width: 1px; height: 1px; min-height: 0; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .room-empty-state { margin-top: 32px; padding: 26px 29px 31px; align-items: stretch; text-align: start; }
+  .room-empty-state-icon { width: 70px; height: 70px; align-self: center; }
+  .room-empty-state-title { margin-top: 35px; }
+  .room-empty-state-description { margin-top: 16px; }
+  .room-empty-state-action { width: 100%; min-height: 46px; }
+  .rooms-grid { gap: 16px; }
+  .room-card { min-height: 148px; border-radius: 15px; }
+  .room-card-content { min-height: 142px; gap: 5px; padding: 12px 17px; }
+  .room-card .room-id-actions { margin-block: 4px; }
+  .room-card-skeleton { background: var(--surface); }
+  .room-card-skeleton .room-card-accent-clip,
+  .room-card-skeleton:nth-child(n+3),
+  .room-card-skeleton .skeleton-live-row,
+  .room-card-skeleton .skeleton-action { display: none; }
+  .room-card-skeleton .room-card-content { gap: 16px; padding: 19px; }
+  .room-card-skeleton .skeleton-block { height: 12px; margin-top: 0; }
+  .room-card-skeleton .skeleton-meta { width: 80%; }
+  .room-card-skeleton .skeleton-id { width: 40%; }
+  .room-card-skeleton .skeleton-participants { width: 55%; }
+  .room-load-error { width: 100%; min-height: 0; margin-block: 32px; padding: 0; border: 0; background: none; text-align: start; }
+  .room-load-error-summary { width: 100%; min-height: 128px; align-items: start; padding: 16px 17px; border: 1px solid var(--error-strong); border-radius: 12px; background: var(--danger-surface); }
+  .room-load-error-icon { display: none; }
+  .room-load-error-title { margin-top: 0; color: var(--error); font-size: 16px; line-height: 22px; }
+  .room-load-error-description { margin-top: 10px; }
+  .room-load-error-retry { width: 100%; margin-top: 23px; }
+}

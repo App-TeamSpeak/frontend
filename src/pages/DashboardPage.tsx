@@ -29,13 +29,15 @@ function RoomCardSkeleton({ accent }: { accent: string }) {
 }
 
 function RoomLoadError({ onRetry, message }: { onRetry: () => void; message: string }) {
-  return <article className="room-load-error" role="alert" aria-live="assertive">
-    <div className="room-load-error-icon" aria-hidden="true">
-      <img src="/assets/figma/error-state.svg" alt="" />
-      <span>!</span>
+  return <article className="room-load-error">
+    <div className="room-load-error-summary" role="alert">
+      <div className="room-load-error-icon" aria-hidden="true">
+        <img src="/assets/figma/error-state.svg" alt="" />
+        <span>!</span>
+      </div>
+      <h3 className="room-load-error-title">No pudimos cargar tus salas</h3>
+      <p className="room-load-error-description">{message}</p>
     </div>
-    <h3 className="room-load-error-title">No pudimos cargar tus salas</h3>
-    <p className="room-load-error-description">{message}</p>
     <button className="room-load-error-retry" type="button" onClick={onRetry}>Reintentar</button>
   </article>;
 }
@@ -241,7 +243,7 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
       <div><PageTitle title="Tus salas" /><p>Continúa donde lo dejaste o crea una sala para tu próximo encuentro.</p></div>
       <div className="actions"><button className="button primary" type="button" onClick={() => setManagementDialog({ kind: 'create' })}>＋ Crear sala</button><button className="button secondary" type="button" onClick={() => setManagementDialog({ kind: 'join' })}>＋ Unirse a sala</button></div>
     </div>
-    <section className="rooms-section" aria-labelledby="recent-rooms-title" aria-busy={loading}>
+    <section className="rooms-section" data-state={status} aria-labelledby="recent-rooms-title" aria-busy={loading}>
       <div className="rooms-section-heading"><h2 id="recent-rooms-title">Salas recientes</h2>{status === 'success' && roomList.length > 0 && <span>{roomList.length} {roomList.length === 1 ? 'sala' : 'salas'}</span>}</div>
       {partial && <p className="room-create-alert" role="status">No pudimos actualizar el listado completo.{' '}
         <button className="button secondary" type="button" onClick={() => void loadRooms()}>Reintentar</button>
