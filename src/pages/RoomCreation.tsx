@@ -206,8 +206,12 @@ export function RoomCreation({ onCreated, onClose, onReviewed, dialog = false, p
           onChange={event => { setDraft(event.target.value); setInvalid(''); }} />
         {fieldError && <p id="create-room-error" className="field-error" role="alert">{fieldError}</p>}
       </div>
-      <p className="room-create-note">El identificador se asigna al crear la sala.</p>
-      {notice && <p className="room-create-alert" role="alert">{notice}</p>}
+      {saving ? <p role="status" className="room-create-progress">Creando sala…</p> :
+        !notice && <p className="room-create-note">El identificador se asigna al crear la sala.</p>}
+      {notice && <div className="room-create-alert" role="alert">
+        <strong>{uncertain ? 'Resultado sin confirmar' : 'Error al crear'}</strong>
+        <p>{notice}</p>
+      </div>}
       {reviewing && <p role="status">Actualizando tus salas…</p>}
       {uncertain && reviewed && <section className="room-create-review" aria-label="Salas actualizadas">
         <p>Comprueba las salas y sus identificadores antes de decidir si vuelves a enviar.</p>
@@ -224,7 +228,6 @@ export function RoomCreation({ onCreated, onClose, onReviewed, dialog = false, p
             </button>}
       </div>
     </form>
-    {saving && <p role="status" className="room-create-progress">Creando sala…</p>}
   </>;
 
   return <>{(protectNavigation || (dialog && shared)) && <CreationNavigation operation={operation} />}{dialog ? <dialog ref={modal} className="room-management-dialog room-management-dialog-create room-create-dialog"

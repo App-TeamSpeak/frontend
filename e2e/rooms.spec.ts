@@ -245,3 +245,38 @@ test('Atrás y Escape recuperan el control cuando vence el POST', async ({ page 
   finish();
   expect(posts).toHaveLength(1);
 });
+
+test('US-06 conserva accesibles los diálogos de administración y las rutas directas', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await stubRooms(page);
+  await page.route('**/api/rooms', route => route.fulfill({ json: { success: true, data: [room] } }));
+  await page.goto('/dashboard');
+  await page.getByRole('button', { name: 'Unirse a sala' }).click();
+  const join = page.getByRole('dialog', { name: 'Unirse a sala' });
+  await expect(join.getByLabel('ID de la sala')).toBeFocused();
+  await page.screenshot({ path: info.outputPath('US06-unirse-modal.png'), scale: 'css' });
+  await join.getByRole('button', { name: 'Cancelar' }).click();
+
+  const menu = page.getByRole('button', { name: 'Más opciones de Cálculo II' });
+  await menu.click();
+  await page.getByRole('menuitem', { name: 'Editar sala' }).click();
+  const edit = page.getByRole('dialog', { name: 'Editar sala' });
+  await expect(edit.getByLabel('Nombre de la sala')).toHaveValue(room.name);
+  await page.screenshot({ path: info.outputPath('US06-editar-modal.png'), scale: 'css' });
+  await edit.getByRole('button', { name: 'Cancelar' }).click();
+
+  await menu.click();
+  await page.getByRole('menuitem', { name: 'Eliminar sala' }).click();
+  const remove = page.getByRole('dialog', { name: '¿Eliminar esta sala?' });
+  await expect(remove.getByRole('button', { name: 'Cancelar' })).toBeFocused();
+  await page.screenshot({ path: info.outputPath('US06-eliminar-modal.png'), scale: 'css' });
+  await remove.getByRole('button', { name: 'Cancelar' }).click();
+
+  await page.goto('/salas/crear');
+  await expect(page.getByLabel('Nombre de la sala')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('US06-crear-ruta-directa.png'), scale: 'css' });
+  await page.goto('/salas/unirse');
+  await expect(page.getByLabel('ID de la sala')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('US06-unirse-ruta-directa.png'), scale: 'css' });
+});

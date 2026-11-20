@@ -556,3 +556,43 @@ test('US-05 coloca el seguimiento bloqueado al pie de Información personal y so
     await expect(tracking).toHaveCount(0);
   }
 });
+
+test('US-05 conserva la reautenticación dentro del diálogo de confirmación', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  const { enableLoad } = await stubProfile(page, false, undefined, true);
+  enableLoad();
+  await page.route('**/api/users/me', async route => {
+    if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
+    await route.fulfill({ status: 401, json: { success: false, code: 'AUTH_RECENT_REQUIRED', message: 'Reautentícate.' } });
+  });
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Eliminar cuenta', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Eliminar mi cuenta' }).click();
+  await expect(dialog.getByLabel('Contraseña actual')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Confirmar con contraseña' })).toBeInViewport();
+  await page.screenshot({ path: info.outputPath('us05-reautenticacion.png'), scale: 'css' });
+});
+
+test('Sprint 2 mantiene el perfil y el diálogo utilizables en una ventana intermedia y baja', async ({ page }, info) => {
+  test.skip(info.project.name.endsWith('mobile'), 'La ventana intermedia se comprueba en el proyecto de escritorio');
+  const { enableLoad } = await stubProfile(page);
+  enableLoad();
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.goto('/perfil');
+  const card = page.getByRole('region', { name: 'Información personal' });
+  await expect(card.getByRole('button', { name: 'Editar perfil' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(800);
+  await page.screenshot({ path: info.outputPath('US04-perfil-consulta-800x600.png'), scale: 'css' });
+
+  await page.getByRole('button', { name: 'Eliminar cuenta', exact: true }).click();
+  await page.setViewportSize({ width: 800, height: 360 });
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  await dialog.getByRole('checkbox').check();
+  const confirm = dialog.getByRole('button', { name: 'Eliminar mi cuenta' });
+  await confirm.scrollIntoViewIfNeeded();
+  await expect(confirm).toBeInViewport();
+  await page.screenshot({ path: info.outputPath('US05-eliminacion-confirmacion-800x360.png'), scale: 'css' });
+});
