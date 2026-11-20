@@ -1,3 +1,4 @@
+import { avatarUrlError, isAvatarUrl, ProfileAvatar, ProfileAvatarEditor } from '../components/ProfileAvatar';
 import { ProfileEmailChange } from '../components/ProfileEmailChange';
 import { AccountDeletionDialog, AccountDeletionTrackingButton } from '../components/AccountDeletionDialog';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -34,14 +35,10 @@ function validate(draft: Draft): FieldErrors {
   if (!/^[A-Za-z0-9_-]{8,30}$/.test(draft.username)) {
     errors.username = 'Usa de 8 a 30 letras ASCII, números, guiones o guiones bajos.';
   }
-  if (draft.avatarUrl && (draft.avatarUrl.length > 2048 || !isHttps(draft.avatarUrl))) {
-    errors.avatarUrl = 'Escribe una URL HTTPS válida de hasta 2048 caracteres.';
+  if (draft.avatarUrl && (!isAvatarUrl(draft.avatarUrl))) {
+    errors.avatarUrl = avatarUrlError;
   }
   return errors;
-}
-
-function isHttps(value: string) {
-  try { return new URL(value).protocol === 'https:'; } catch { return false; }
 }
 
 function errorMessage(error: unknown, action: 'cargar' | 'guardar') {
@@ -72,6 +69,7 @@ export function ProfilePage() {
 
 function ProfileContent({ uid }: { uid: string }) {
   const { user, setUser } = useAuth();
+  const sessionIdentity = useRef(user);
   const [emailBusy, setEmailBusy] = useState(false);
   const [query, setQuery] = useState<Query>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -80,10 +78,8 @@ function ProfileContent({ uid }: { uid: string }) {
   const [feedback, setFeedback] = useState('');
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [avatarFailed, setAvatarFailed] = useState(false);
   const pending = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
-  const avatarOptions = useRef<HTMLDetailsElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const discardDialog = useRef<HTMLDialogElement>(null);
   const active = useRef(false);
@@ -183,10 +179,8 @@ function ProfileContent({ uid }: { uid: string }) {
     setFeedback('');
     const firstInvalid = fields.find(([field]) => invalid[field]);
     if (firstInvalid) {
-      if (firstInvalid[0] === 'avatarUrl' && avatarOptions.current) {
-        avatarOptions.current.open = true;
-      }
-      document.getElementById(`profile-${firstInvalid[0]}`)?.focus();
+      const field = firstInvalid[0];
+      document.getElementById(field === 'avatarUrl' ? 'profile-avatar-control' : `profile-${field}`)?.focus();
       return;
     }
     const patch: Parameters<typeof updateUserProfile>[0] = {};
@@ -207,7 +201,6 @@ function ProfileContent({ uid }: { uid: string }) {
       }
       setQuery({ status: 'ready', profile: result.profile });
       setDraft(toDraft(result.profile));
-      setAvatarFailed(false);
       setUser(result.user);
       setSaved(true);
     } catch (error) {
@@ -222,7 +215,6 @@ function ProfileContent({ uid }: { uid: string }) {
             const field = fields.find(([key]) => key === issue?.path?.[0])?.[0];
             if (field) serverErrors[field] = 'Revisa el valor de este campo.';
           }
-          if (serverErrors.avatarUrl && avatarOptions.current) avatarOptions.current.open = true;
           setErrors(serverErrors);
         }
       }
@@ -234,27 +226,34 @@ function ProfileContent({ uid }: { uid: string }) {
 
   const name = profile ? `${profile.nombre} ${profile.apellido}` : '';
   const showSessionIdentity = query.status === 'loading' || query.status === 'error';
-  const identityName = profile ? name : showSessionIdentity && user?.id === uid
-    ? [user.name, user.apellido].filter(Boolean).join(' ') : '';
-  const avatar = profile ? profile.avatarUrl : user?.avatarUrl;
+  const identityUser = user?.name ? user : sessionIdentity.current;
+  const identityName = profile ? name : showSessionIdentity && identityUser?.id === uid
+    ? [identityUser.name, identityUser.apellido].filter(Boolean).join(' ') : '';
+  const avatar = draft ? draft.avatarUrl : profile ? profile.avatarUrl : identityUser?.avatarUrl;
   const initials = profile ? `${profile.nombre[0] ?? ''}${profile.apellido[0] ?? ''}`
     : identityName.split(/\s+/).slice(0, 2).map(part => part[0]).join('');
+  const identity = identityName && <div className="user-profile-identity">
+    <ProfileAvatar key={avatar} url={avatar} initials={initials} />
+    <div className="user-profile-identity-copy">
+      <strong>{identityName}</strong>
+      {draft && <ProfileAvatarEditor value={draft.avatarUrl} initials={initials} error={errors.avatarUrl} disabled={saving || saved}
+        onApply={avatarUrl => {
+          setDraft({ ...draft, avatarUrl });
+          setErrors({ ...errors, avatarUrl: undefined });
+        }} />}
+    </div>
+  </div>;
   return <section className="user-profile">
     <div className="user-profile-heading">
       <div><PageTitle title="Mi perfil" /><p>{editing ? 'Actualiza tu información personal.' : 'Consulta y administra los datos de tu cuenta.'}</p></div>
       {!user?.username && <Link className="button secondary" to="/dashboard">Mis salas</Link>}
     </div>
     <div className="user-profile-grid">
-      <section className="user-profile-card" aria-labelledby="profile-heading">
-        <h2 id="profile-heading" ref={heading} tabIndex={-1}>{editing ? 'Editar información personal' : 'Información personal'}</h2>
-        {identityName && <div className="user-profile-identity">
-          <span className="user-profile-avatar" aria-hidden="true">
-            {avatar && !avatarFailed ? <img src={avatar} alt="" referrerPolicy="no-referrer" onError={() => setAvatarFailed(true)} /> : initials.toUpperCase()}
-          </span>
-          <strong>{identityName}</strong>
-        </div>}
+      <section className={`user-profile-card${editing ? ' user-profile-card-editing' : ''}`} aria-labelledby="profile-heading">
+        <h2 id="profile-heading" ref={heading} tabIndex={-1}>{editing && !saved ? 'Editar información personal' : 'Información personal'}</h2>
+        {!draft && identity}
         {query.status === 'loading' && <div className="user-profile-loading" role="status">
-          <p>Cargando perfil…</p>
+          <p className="visually-hidden">Cargando perfil…</p>
           <div aria-hidden="true"><span /><span /><span /></div>
         </div>}
         {query.status === 'error' && <>
@@ -273,8 +272,9 @@ function ProfileContent({ uid }: { uid: string }) {
           <Link to="/completar-username" onClick={() => { if (user?.username) setUser({ ...user, username: undefined }); }}>Completar perfil</Link>
         </div>}
         {profile && <>
-          {draft ? <form onSubmit={save} noValidate>
+          {draft ? <form id="profile-edit-form" onSubmit={save} noValidate>
             <fieldset disabled={saving || saved} aria-busy={saving} className="user-profile-fields">
+              {identity}
               {fields.slice(0, 3).map(([field, label]) => <div className="form-field" key={field}>
                 <label htmlFor={`profile-${field}`}>{label}</label>
                 <input id={`profile-${field}`} value={draft[field]} required
@@ -287,37 +287,21 @@ function ProfileContent({ uid }: { uid: string }) {
                 <label htmlFor="profile-email">Correo electrónico</label>
                 <input id="profile-email" value={profile.email} readOnly />
               </div>
-              <details className="user-profile-avatar-option" ref={avatarOptions}>
-                <summary>Opciones de avatar</summary>
-                <div className="form-field">
-                  <label htmlFor="profile-avatarUrl">Avatar HTTPS (opcional)</label>
-                  <input id="profile-avatarUrl" type="url" value={draft.avatarUrl}
-                    aria-invalid={Boolean(errors.avatarUrl)} aria-describedby={errors.avatarUrl ? 'profile-avatarUrl-error' : undefined}
-                    onChange={event => { setDraft({ ...draft, avatarUrl: event.target.value }); setErrors({ ...errors, avatarUrl: undefined }); }} />
-                  {errors.avatarUrl && <p id="profile-avatarUrl-error" className="field-error" role="alert">{errors.avatarUrl}</p>}
-                </div>
-              </details>
             </fieldset>
-            {saving && <p className="user-profile-notice user-profile-saving" role="status">Guardando cambios…</p>}
-            {saved && <p className="user-profile-notice user-profile-success" role="status">Cambios guardados.</p>}
-            {feedback && <p className="user-profile-notice user-profile-error" role="alert">{feedback}</p>}
-            <div className="user-profile-actions">
-              {saved ? <button className="button primary" type="button" onClick={endEditing}>Volver al perfil</button> : <>
-                <button className="button secondary" ref={cancelButton} type="button" disabled={saving} onClick={cancel}>Cancelar</button>
-                <button className="button primary" type="submit" disabled={saving || emailBusy}>{saving ? 'Guardando…' : feedback ? 'Reintentar' : 'Guardar cambios'}</button>
-              </>}
-            </div>
+            {saving && <div className="user-profile-notice user-profile-saving" role="status"><strong>Guardando cambios…</strong><p>Actualizando tu perfil.</p></div>}
+            {saved && <div className="user-profile-notice user-profile-success" role="status"><strong>Cambios guardados.</strong><p>Tu información se actualizó correctamente.</p></div>}
+            {feedback && <div className="user-profile-notice user-profile-error" role="alert"><strong>Error al guardar</strong><p>{feedback}</p></div>}
           </form> : <dl className="user-profile-data">
             <div><dt>Nombre completo</dt><dd>{name}</dd></div>
             <div><dt>Nombre de usuario</dt><dd>{profile.username}</dd></div>
             <div><dt>Correo electrónico</dt><dd>{profile.email}</dd></div>
           </dl>}
-          <ProfileEmailChange uid={uid} email={profile.email} supported={user?.canChangeEmail} hidden={!editing || saving || saved}
-            onBusy={setEmailBusy} onConfirmed={result => {
-              if (!result.isCurrent()) return;
-              setQuery({ status: 'ready', profile: result.profile });
-              setUser(result.user);
-            }} />
+          {draft && <div className="user-profile-actions">
+            {saved ? <button className="button primary" type="button" onClick={endEditing}>Volver al perfil</button> : <>
+              <button className="button secondary" ref={cancelButton} type="button" disabled={saving} onClick={cancel}>Cancelar</button>
+              <button className="button primary" type="submit" form="profile-edit-form" disabled={saving || emailBusy}>{saving ? 'Guardando…' : feedback ? 'Reintentar' : 'Guardar cambios'}</button>
+            </>}
+          </div>}
           {!draft && <button type="button" className="button primary user-profile-edit" onClick={() => {
             setDraft(toDraft(profile));
             focusHeading();
@@ -331,6 +315,14 @@ function ProfileContent({ uid }: { uid: string }) {
           <p>Administra tu perfil y controla las acciones importantes.</p>
           {editing && <p className="user-profile-private">Tus datos son privados</p>}
         </div>
+        {profile && <div className="user-profile-email">
+          <ProfileEmailChange uid={uid} email={profile.email} supported={user?.canChangeEmail} hidden={!editing || saving || saved}
+            onBusy={setEmailBusy} onConfirmed={result => {
+              if (!result.isCurrent()) return;
+              setQuery({ status: 'ready', profile: result.profile });
+              setUser(result.user);
+            }} />
+        </div>}
         {profile && !editing && <AccountDeletionDialog />}
       </div>
     </div>

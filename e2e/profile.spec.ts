@@ -6,7 +6,7 @@ const initial = {
   profileStatus: 'complete', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-async function stubProfile(page: Page, missingUsername = false, pendingOutcome?: 'success' | 'failure', passwordLinked = false) {
+async function stubProfile(page: Page, missingUsername = false, pendingOutcome?: 'success' | 'failure', passwordLinked: boolean | 'both' = false, simulateEmailVerification = false) {
   let profile = { ...initial };
   let failLoad = true;
   let profileError: { status: number; code: string } | undefined;
@@ -21,7 +21,7 @@ async function stubProfile(page: Page, missingUsername = false, pendingOutcome?:
   await page.route(/\/src\/firebase\.ts(\?.*)?$/, route => route.fulfill({
     contentType: 'application/javascript',
     body: `export const firebaseAuth = { currentUser: { uid: 'us04-test', email: 'maria@example.test',
-      emailVerified: true, providerData: ${JSON.stringify(passwordLinked ? [{ providerId: 'password' }] : [])}, getIdToken: async () => 'synthetic-id-token' } };
+      emailVerified: true, providerData: ${JSON.stringify(passwordLinked === 'both' ? [{ providerId: 'password' }, { providerId: 'google.com' }] : passwordLinked ? [{ providerId: 'password' }] : [])}, getIdToken: async () => 'synthetic-id-token' } };
       export const firebaseApp = {};
       export const assertFirebaseConfiguration = () => {};`,
   }));
@@ -33,7 +33,33 @@ async function stubProfile(page: Page, missingUsername = false, pendingOutcome?:
       export * from ${JSON.stringify(url.pathname + url.search)};
       import { firebaseAuth } from '/src/firebase.ts';
       export const configureAuth = async () => {};
+      ${simulateEmailVerification ? `
+        let confirmedEmail;
+        let sendCount = 0;
+        export const requestVerifiedEmailChange = async (_uid, email, _signal, password, sending) => {
+          if (email === 'recuperacion@example.test') {
+            if (!password) throw Object.assign(new Error('Reautentícate.'), { code: 'AUTH_RECENT_REQUIRED' });
+            if (password !== 'fixture-password') throw new Error('La contraseña actual es incorrecta.');
+            if (++sendCount === 2) throw new Error('Espera unos minutos e inténtalo de nuevo.');
+          }
+          await window.releaseEmailEligibility();
+          sending();
+          await window.releaseEmailDelivery();
+          confirmedEmail = email;
+        };
+        export const confirmVerifiedEmailChange = async () => {
+          if (!await window.releaseEmailCheck()) return null;
+          const profile = { ...${JSON.stringify(initial)}, email: confirmedEmail };
+          return { profile, user: { id: profile.uid, name: profile.nombre, apellido: profile.apellido,
+            username: profile.username, email: profile.email, emailVerified: true, canChangeEmail: true }, isCurrent: () => true };
+        };` : ''}
+      ${passwordLinked === 'both' ? `
+        export const reauthenticateForDeletion = async (_identity, provider, password) => {
+          const message = await window.deletionReauth(provider, password);
+          if (message) throw new Error(message);
+        };` : ''}
       export const logoutUser = async () => {
+        await window.deletionLogout?.();
         firebaseAuth.currentUser = null;
         window.dispatchEvent(new Event('teamspeak-test-logout'));
       };
@@ -121,6 +147,17 @@ test('consulta, edición, recuperación de errores y descarte de perfil', async 
   const username = main.getByLabel('Nombre de usuario');
   await expect(main.getByLabel('Correo electrónico')).toHaveAttribute('readonly', '');
   await page.screenshot({ path: info.outputPath('editar.png'), scale: 'css' });
+  if (!mobile) {
+    for (const [width, height] of [[768, 1024], [800, 600], [800, 360], [320, 640]]) {
+      await page.setViewportSize({ width, height });
+      const save = main.getByRole('button', { name: 'Guardar cambios' });
+      await save.scrollIntoViewIfNeeded();
+      await expect(save).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      await page.screenshot({ path: info.outputPath(`editar-${width}x${height}.png`), scale: 'css' });
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
   await username.fill('maria.gomez');
   await main.getByRole('button', { name: 'Guardar cambios' }).click();
   await expect(username).toBeFocused();
@@ -257,7 +294,7 @@ for (const outcome of ['success', 'failure'] as const) {
     await expect(page).toHaveURL(/\/perfil$/);
     await expect(page.getByRole('button', { name: 'Cancelar', exact: true })).toBeDisabled();
     await expect(page.getByRole('dialog', { name: '¿Descartar cambios?' })).toHaveCount(0);
-    await expect(page.getByRole('main').getByRole('status')).toHaveText('Guardando cambios…');
+    await expect(page.getByRole('main').getByRole('status')).toContainText('Guardando cambios…');
     await expect(page.getByRole('link', { name: 'Perfil', exact: true })).toHaveText('M');
     await page.screenshot({ path: info.outputPath('guardado-con-salida.png'), scale: 'css' });
     releaseSave();
@@ -341,6 +378,8 @@ test('US-05 confirma y cancela desde el perfil sin enviar DELETE ni cerrar sesi�
   await cancel.click();
   await expect(entry).toBeFocused();
 
+  await page.screenshot({ path: info.outputPath('us05-cancelada.png'), scale: 'css' });
+
   await entry.click();
   await check.check();
   await page.evaluate(() => window.dispatchEvent(new Event('teamspeak-test-switch')));
@@ -354,6 +393,82 @@ test('US-05 confirma y cancela desde el perfil sin enviar DELETE ni cerrar sesi�
   await expect(page).toHaveURL(/\/perfil$/);
   await expect(page.getByText('second@example.test')).toBeVisible();
   expect(deletions).toEqual([]);
+});
+
+test('US-04 ofrece completar un perfil incompleto', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await stubProfile(page, true);
+  await page.route('**/api/users/me', route => route.fulfill({
+    json: { success: true, data: { uid: initial.uid, profileStatus: 'incomplete', profile: null } },
+  }));
+  await page.goto('/perfil');
+  await expect(page.getByRole('link', { name: 'Completar perfil' })).toHaveAttribute('href', '/completar-username');
+  await expect(page.getByRole('button', { name: 'Editar perfil' })).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('perfil-incompleto.png'), scale: 'css' });
+});
+
+test('US-04 previsualiza, aplica y guarda un avatar HTTPS', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  const size = mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+  await page.setViewportSize(size);
+  const { enableLoad, releaseSave, patches } = await stubProfile(page, false, 'success');
+  enableLoad();
+  releaseSave();
+  const photo = 'https://images.example.test/avatar.svg';
+  await page.route(photo, route => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="86" height="86"><rect width="86" height="86" fill="#0f766e"/><circle cx="43" cy="33" r="12" fill="#f8fafc"/><ellipse cx="43" cy="65" rx="22" ry="13" fill="#f8fafc"/></svg>',
+  }));
+  await page.route('https://images.example.test/missing.png', route => route.fulfill({ status: 404 }));
+  const capture = (name: string) => page.screenshot({ path: info.outputPath(`${name}.png`), scale: 'css' });
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Editar perfil' }).click();
+  const trigger = page.getByRole('button', { name: 'Cambiar foto' });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Cambiar foto de perfil' });
+  const input = dialog.getByLabel('Avatar HTTPS (opcional)');
+  await expect(input).toBeFocused();
+  await capture('avatar-selector');
+  await input.fill('http://images.example.test/avatar.svg');
+  await dialog.getByRole('button', { name: 'Ver vista previa' }).click();
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await capture('avatar-validacion');
+  await input.fill('https://images.example.test/missing.png');
+  await input.press('Enter');
+  await expect(dialog.getByRole('alert')).toContainText('No pudimos cargar');
+  await capture('avatar-error');
+  await dialog.getByRole('button', { name: 'Volver' }).click();
+  await expect(input).toBeFocused();
+  await input.fill(photo);
+  await input.press('Enter');
+  const image = dialog.locator('.user-profile-avatar img');
+  await expect.poll(() => image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBe(86);
+  await capture('avatar-previa');
+  const apply = dialog.getByRole('button', { name: 'Usar esta foto' });
+  if (!mobile) {
+    for (const [width, height] of [[768, 1024], [800, 600], [800, 360], [320, 640]]) {
+      await page.setViewportSize({ width, height });
+      await apply.scrollIntoViewIfNeeded();
+      await expect(apply).toBeInViewport();
+      expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await capture(`avatar-previa-${width}x${height}`);
+    }
+    await page.setViewportSize(size);
+  }
+  await apply.click();
+  await expect(trigger).toBeFocused();
+  expect(patches).toEqual([]);
+  const avatar = page.locator('main .user-profile-identity img[src^="https:"]');
+  await expect(avatar).toHaveAttribute('src', photo);
+  await capture('avatar-aplicado');
+  await page.getByRole('button', { name: 'Guardar cambios' }).click();
+  await expect(page.getByRole('status')).toContainText('Cambios guardados');
+  expect(patches).toEqual([{ avatarUrl: photo }]);
+  await capture('avatar-guardado');
+  await page.getByRole('button', { name: 'Volver al perfil' }).click();
+  await expect(avatar).toHaveAttribute('src', photo);
+  await capture('avatar-consulta');
 });
 
 test('US-04 valida el nuevo correo y conserva el borrador ante EMAIL_TAKEN', async ({ page }, info) => {
@@ -388,6 +503,105 @@ test('US-04 valida el nuevo correo y conserva el borrador ante EMAIL_TAKEN', asy
   await page.getByRole('button', { name: 'Cancelar cambio de correo' }).click();
   await expect(address).toHaveValue('');
   await expect(page.getByLabel('Nombre', { exact: true })).toHaveValue('Cambios sin guardar');
+});
+
+test('US-04 muestra verificación de correo pendiente, comprobación y confirmación', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  const { enableLoad, patches } = await stubProfile(page, false, undefined, true, true);
+  enableLoad();
+  let finishEligibility!: () => void;
+  let finishDelivery!: () => void;
+  let confirm!: (verified: boolean) => void;
+  const eligibility = new Promise<void>(resolve => { finishEligibility = resolve; });
+  const delivery = new Promise<void>(resolve => { finishDelivery = resolve; });
+  const verification = new Promise<boolean>(resolve => { confirm = resolve; });
+  let checks = 0;
+  await page.exposeFunction('releaseEmailEligibility', () => eligibility);
+  await page.exposeFunction('releaseEmailDelivery', () => delivery);
+  await page.exposeFunction('releaseEmailCheck', () => ++checks === 1 ? false : verification);
+  const capture = (name: string) => page.screenshot({ path: info.outputPath(`email-${name}.png`), fullPage: true, scale: 'css' });
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Editar perfil' }).click();
+  const form = page.getByRole('region', { name: 'Cambiar correo electrónico' });
+  const address = form.getByLabel('Nuevo correo electrónico');
+  const send = form.getByRole('button', { name: 'Enviar verificación' });
+  const save = page.getByRole('button', { name: 'Guardar cambios' });
+  await expect(address).toHaveValue('');
+  await capture('inicial');
+  await send.click();
+  await expect(form.getByRole('alert')).toContainText('Introduce un correo electrónico válido');
+  await capture('vacio');
+  await address.fill('inválido');
+  await send.click();
+  await expect(form.getByRole('alert')).toBeVisible();
+  await capture('invalido');
+  await address.fill('nuevo@example.test');
+  await send.click();
+  await expect(form.getByRole('status')).toHaveText('Validando disponibilidad…');
+  await expect(save).toBeDisabled();
+  await capture('elegibilidad');
+  finishEligibility();
+  await expect(form.getByRole('status')).toHaveText('Enviando verificación…');
+  await capture('enviando');
+  finishDelivery();
+  await expect(form.getByText(/Verificación pendiente para/)).toBeVisible();
+  await capture('pendiente');
+  const check = form.getByRole('button', { name: 'Comprobar verificación' });
+  await check.click();
+  await expect(form.getByRole('status')).toHaveText('El cambio todavía está pendiente de verificación.');
+  await capture('sin-verificar');
+  await check.click();
+  await expect(form.getByRole('status')).toHaveText('Comprobando verificación…');
+  await capture('comprobando');
+  confirm(true);
+  await expect(form.getByRole('status')).toContainText('El correo nuevo fue verificado');
+  await expect(page.getByLabel('Correo electrónico', { exact: true })).toHaveValue('nuevo@example.test');
+  expect(patches).toEqual([]);
+  await capture('confirmado');
+
+  await form.getByRole('button', { name: 'Cambiar otra dirección' }).click();
+  await address.fill('recuperacion@example.test');
+  await send.click();
+  const password = form.getByLabel('Contraseña actual');
+  await expect(password).toBeVisible();
+  await capture('reautenticacion');
+  await password.fill('otra-contraseña');
+  await send.click();
+  await expect(form.getByRole('alert')).toContainText('La contraseña actual es incorrecta.');
+  await expect(password).toHaveValue('');
+  await capture('contrasena-incorrecta');
+  await password.fill('fixture-password');
+  await send.click();
+  await expect(check).toBeVisible();
+  const resend = form.getByRole('button', { name: 'Enviar otra verificación' });
+  await resend.click();
+  await expect(password).toBeVisible();
+  await password.fill('fixture-password');
+  await resend.click();
+  await expect(form.getByRole('alert')).toContainText('Espera unos minutos');
+  await capture('error-temporal');
+  await password.fill('fixture-password');
+  await resend.click();
+  await expect(form.getByRole('status')).toContainText('Se solicitó otra verificación');
+  await capture('reenvio');
+  if (!mobile) {
+    const size = page.viewportSize()!;
+    for (const [width, height] of [[768, 1024], [800, 600], [800, 360], [320, 640]]) {
+      await page.setViewportSize({ width, height });
+      await check.scrollIntoViewIfNeeded();
+      await expect(check).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      await capture(`recuperacion-${width}x${height}`);
+    }
+    await page.setViewportSize(size);
+  }
+  await form.getByRole('button', { name: 'Salir del cambio de correo' }).click();
+  await expect(form.getByRole('status')).toContainText('Los enlaces enviados anteriormente pueden seguir vigentes.');
+  await capture('cancelado');
+  await form.getByRole('button', { name: 'Abrir cambio de correo' }).click();
+  await expect(address).toHaveValue('');
+  expect(patches).toEqual([]);
 });
 
 test('US-05 espera la confirmación por token y vuelve al login tras un solo DELETE', async ({ page }, info) => {
@@ -447,6 +661,7 @@ test('US-05 trata un 503 como incierto y conserva una salida segura sin reenviar
   const { enableLoad } = await stubProfile(page);
   enableLoad();
   let deletions = 0;
+  let lookups = 0;
   await page.route('**/api/users/me', async route => {
     if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
     deletions++;
@@ -456,6 +671,10 @@ test('US-05 trata un 503 como incierto y conserva una salida segura sin reenviar
     if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204 }); return; }
     expect(route.request().headers().authorization).toBeUndefined();
     expect(route.request().headers()['x-deletion-status-token']).toMatch(/^[A-Za-z0-9_-]{64}$/);
+    if (++lookups === 1) {
+      await route.abort('connectionreset');
+      return;
+    }
     await route.fulfill({ json: { success: true, data: { status: 'blocked' } } });
   });
   await page.goto('/perfil');
@@ -464,7 +683,12 @@ test('US-05 trata un 503 como incierto y conserva una salida segura sin reenviar
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Eliminar mi cuenta' }).click();
   await expect(dialog.getByText('El resultado de la eliminación sigue sin confirmarse.')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Consultar estado' }).click();
+  await page.screenshot({ path: info.outputPath('us05-incierta.png'), scale: 'css' });
+  const check = dialog.getByRole('button', { name: 'Consultar estado' });
+  await check.click();
+  await expect(dialog.getByRole('alert')).toContainText('No pudimos comprobar el estado');
+  await page.screenshot({ path: info.outputPath('us05-seguimiento-error.png'), scale: 'css' });
+  await check.click();
   await expect(dialog.getByRole('alert')).toContainText('Contacta a soporte');
   expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.screenshot({ path: info.outputPath('us05-bloqueada.png'), scale: 'css' });
@@ -472,13 +696,18 @@ test('US-05 trata un 503 como incierto y conserva una salida segura sin reenviar
   await expect(page).toHaveURL(/\/perfil$/);
   await expect(page.getByText(initial.email)).toBeVisible();
   expect(deletions).toBe(1);
+  expect(lookups).toBe(2);
 });
 
-test('US-05 recupera una respuesta perdida tras recargar sin identidad Firebase', async ({ page }) => {
+test('US-05 recupera una respuesta perdida tras recargar sin identidad Firebase', async ({ page }, info) => {
+  await page.setViewportSize(info.project.name.endsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 900 });
   const { enableLoad } = await stubProfile(page);
   enableLoad();
   let deletions = 0;
   let receipt: string;
+  let releaseLookup!: () => void;
+  const lookup = new Promise<void>(resolve => { releaseLookup = resolve; });
+  let lookups = 0;
   await page.route('**/api/users/me', async route => {
     if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
     deletions++;
@@ -489,6 +718,8 @@ test('US-05 recupera una respuesta perdida tras recargar sin identidad Firebase'
     if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204 }); return; }
     expect(route.request().headers()['x-deletion-status-token']).toBe(receipt);
     expect(route.request().headers().authorization).toBeUndefined();
+    lookups++;
+    await lookup;
     await route.fulfill({ json: { success: true, data: { status: 'completed' } } });
   });
 
@@ -500,6 +731,8 @@ test('US-05 recupera una respuesta perdida tras recargar sin identidad Firebase'
   await expect(confirm).toBeEnabled();
   await confirm.click();
   await expect(dialog.getByText(/el resultado de la eliminación sigue sin confirmarse/i)).toBeVisible();
+
+  await page.screenshot({ path: info.outputPath('us05-red-perdida.png'), scale: 'css' });
 
   await page.route(/\/src\/firebase\.ts(\?.*)?$/, route => route.fulfill({
     contentType: 'application/javascript',
@@ -519,11 +752,16 @@ test('US-05 recupera una respuesta perdida tras recargar sin identidad Firebase'
   await page.reload();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('button', { name: 'Ver seguimiento de eliminación' })).toHaveCount(0);
+  await expect.poll(() => lookups).toBe(1);
+  await page.screenshot({ path: info.outputPath('us05-recuperacion.png'), scale: 'css' });
+  releaseLookup();
   await expect(page.locator('.auth-card').getByRole('status')).toHaveText('El servidor confirmó la eliminación de tu cuenta.');
   expect(deletions).toBe(1);
+  await page.screenshot({ path: info.outputPath('us05-recuperada.png'), scale: 'css' });
 });
 
-test('US-05 coloca el seguimiento bloqueado al pie de Información personal y solo en perfil', async ({ page }) => {
+test('US-05 coloca el seguimiento bloqueado al pie de Información personal y solo en perfil', async ({ page }, info) => {
+  await page.setViewportSize(info.project.name.endsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 900 });
   const { setProfileError } = await stubProfile(page);
   await page.addInitScript(() => {
     sessionStorage.setItem('teamspeak.deletion.receipt.us04-test', JSON.stringify({
@@ -544,6 +782,7 @@ test('US-05 coloca el seguimiento bloqueado al pie de Información personal y so
     return { aligned: Math.abs(heading.left - button.left) < 1, contained: button.right <= bounds.right && button.bottom <= bounds.bottom };
   });
   expect(geometry).toEqual({ aligned: true, contained: true });
+  await page.screenshot({ path: info.outputPath('us05-seguimiento.png'), scale: 'css' });
   await tracking.click();
   const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
   await expect(dialog.getByRole('alert')).toContainText('Contacta a soporte');
@@ -560,10 +799,16 @@ test('US-05 coloca el seguimiento bloqueado al pie de Información personal y so
 test('US-05 conserva la reautenticación dentro del diálogo de confirmación', async ({ page }, info) => {
   const mobile = info.project.name.endsWith('mobile');
   await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
-  const { enableLoad } = await stubProfile(page, false, undefined, true);
+  const { enableLoad } = await stubProfile(page, false, undefined, 'both');
   enableLoad();
+  let release!: (result: string) => void;
+  let deletions = 0;
+  const verification = new Promise<string>(resolve => { release = resolve; });
+  await page.exposeFunction('deletionReauth', (provider: string) => provider === 'password'
+    ? 'La contraseña actual es incorrecta.' : verification);
   await page.route('**/api/users/me', async route => {
     if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
+    deletions++;
     await route.fulfill({ status: 401, json: { success: false, code: 'AUTH_RECENT_REQUIRED', message: 'Reautentícate.' } });
   });
   await page.goto('/perfil');
@@ -574,6 +819,99 @@ test('US-05 conserva la reautenticación dentro del diálogo de confirmación', 
   await expect(dialog.getByLabel('Contraseña actual')).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Confirmar con contraseña' })).toBeInViewport();
   await page.screenshot({ path: info.outputPath('us05-reautenticacion.png'), scale: 'css' });
+  const password = dialog.getByLabel('Contraseña actual');
+  await password.fill('fixture-password');
+  await dialog.getByRole('button', { name: 'Confirmar con contraseña' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('La contraseña actual es incorrecta.');
+  await expect(password).toHaveValue('');
+  await page.screenshot({ path: info.outputPath('us05-credenciales.png'), scale: 'css' });
+  await dialog.getByRole('button', { name: 'Reautenticar con Google' }).click();
+  await expect(dialog.getByRole('status')).toContainText('Comprobando identidad…');
+  await expect(dialog.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+  await page.screenshot({ path: info.outputPath('us05-google-procesando.png'), scale: 'css' });
+  release('La comprobación con Google se canceló.');
+  await expect(dialog.getByRole('alert')).toContainText('La comprobación con Google se canceló.');
+  await expect(dialog.getByRole('button', { name: 'Reautenticar con Google' })).toBeEnabled();
+  await page.screenshot({ path: info.outputPath('us05-google-error.png'), scale: 'css' });
+  expect(deletions).toBe(1);
+});
+
+test('US-05 permite volver a confirmar después de un rechazo explícito', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  const size = mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+  await page.setViewportSize(size);
+  const { enableLoad } = await stubProfile(page);
+  enableLoad();
+  let requests = 0;
+  await page.route('**/api/users/me', async route => {
+    if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
+    requests++;
+    await route.fulfill({ status: 400, json: { success: false, code: 'VALIDATION_ERROR', message: 'No disponible' } });
+  });
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Eliminar cuenta', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  const checkbox = dialog.getByRole('checkbox');
+  const confirm = dialog.getByRole('button', { name: 'Eliminar mi cuenta' });
+  await checkbox.check();
+  await confirm.click();
+  await expect(dialog.getByRole('alert')).toContainText('El servidor rechazó la solicitud');
+  await expect(checkbox).not.toBeChecked();
+  await expect(confirm).toBeDisabled();
+  await page.screenshot({ path: info.outputPath('us05-error.png'), scale: 'css' });
+  if (!mobile) {
+    for (const [width, height] of [[768, 1024], [800, 600], [800, 360], [320, 640]]) {
+      await page.setViewportSize({ width, height });
+      await checkbox.check();
+      await confirm.scrollIntoViewIfNeeded();
+      await expect(confirm).toBeInViewport();
+      expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      await page.screenshot({ path: info.outputPath(`us05-error-${width}x${height}.png`), scale: 'css' });
+    }
+  } else {
+    await checkbox.check();
+  }
+  await confirm.click();
+  await expect(dialog.getByRole('alert')).toContainText('El servidor rechazó la solicitud');
+  expect(requests).toBe(2);
+});
+
+test('US-05 reintenta el cierre local sin otra solicitud DELETE', async ({ page }, info) => {
+  await page.setViewportSize(info.project.name.endsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  const { enableLoad } = await stubProfile(page);
+  enableLoad();
+  let deletions = 0;
+  let logouts = 0;
+  let finish!: () => void;
+  const pendingLogout = new Promise<void>(resolve => { finish = resolve; });
+  await page.exposeFunction('deletionLogout', async () => {
+    if (++logouts === 1) {
+      await pendingLogout;
+      throw new Error('Fallo sintético de cierre local');
+    }
+  });
+  await page.route('**/api/users/me', async route => {
+    if (route.request().method() !== 'DELETE') { await route.fallback(); return; }
+    deletions++;
+    await route.fulfill({ json: { success: true, data: { status: 'completed' } } });
+  });
+  await page.goto('/perfil');
+  await page.getByRole('button', { name: 'Eliminar cuenta', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Eliminar mi cuenta' }).click();
+  await expect(dialog.getByText('Finalizando la sesión local…')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('us05-cierre-procesando.png'), scale: 'css' });
+  finish();
+  await expect(dialog.getByRole('alert')).toContainText('problema al cerrar la sesión');
+  await expect(dialog.getByRole('button', { name: 'Eliminar mi cuenta' })).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('us05-cierre-error.png'), scale: 'css' });
+  await dialog.getByRole('button', { name: 'Reintentar cierre de sesión' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.locator('.auth-card').getByRole('status')).toContainText('El servidor confirmó');
+  expect(deletions).toBe(1);
+  expect(logouts).toBe(2);
 });
 
 test('Sprint 2 mantiene el perfil y el diálogo utilizables en una ventana intermedia y baja', async ({ page }, info) => {

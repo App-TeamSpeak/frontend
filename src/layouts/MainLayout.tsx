@@ -9,7 +9,7 @@ export function MainLayout() {
   const auth = useOptionalAuth();
   const main = useRef<HTMLElement>(null);
   const previous = useRef(pathname);
-  const isAuthPage = pathname === '/login' || pathname === '/registro' || pathname === '/completar-username' || pathname === '/verificar-correo';
+  const isAuthPage = pathname === '/login' || pathname === '/registro' || pathname === '/completar-username' || pathname === '/verificar-correo' || pathname === '/recuperar-contrasena' || pathname === '/sesion-cerrada';
   const isRegisterPage = pathname === '/registro';
   const isDashboardPage = pathname === '/dashboard';
   const isRoomPage = /^\/salas\/(?!crear$|unirse$)[^/]+$/.test(pathname);

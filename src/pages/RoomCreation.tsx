@@ -187,12 +187,21 @@ export function RoomCreation({ onCreated, onClose, onReviewed, dialog = false, p
   }
 
   const content = created ? <>
-    <h2 id="create-room-title" ref={outcomeHeading} tabIndex={-1}>Sala creada correctamente</h2>
-    <p className="room-create-success" role="status">{created.name}</p>
-    <CopyRoomId id={created.id} />
-    <div className="room-management-dialog-actions">
-      <button type="button" className="button secondary" onClick={close}>Ir a mis salas</button>
-      <Link onClick={() => operation.set({ phase: 'idle' })} className="button primary" to={`/salas/${encodeURIComponent(created.id)}`}>Entrar</Link>
+    <h2 id="create-room-title" ref={outcomeHeading} tabIndex={-1} aria-label="Sala creada correctamente">
+      <span className="room-created-title-wide">Sala creada correctamente</span>
+      <span className="room-created-title-short" aria-hidden="true">Sala creada</span>
+    </h2>
+    <p>Tu sala está lista para estudiar. Puedes encontrarla en el panel de salas.</p>
+    <div className="room-create-success" role="status">
+      <strong><span aria-hidden="true">✓</span> Creación completada</strong>
+      <p>{created.name}</p>
+    </div>
+    <div className="room-created-return">
+      <button type="button" className="button primary" onClick={close}>Ir a mis salas</button>
+    </div>
+    <div className="room-created-tools">
+      <CopyRoomId id={created.id} />
+      <Link onClick={() => operation.set({ phase: 'idle' })} className="button secondary" to={`/salas/${encodeURIComponent(created.id)}`}>Entrar</Link>
     </div>
   </> : <>
     <h2 id="create-room-title">Crear sala</h2>
@@ -206,8 +215,11 @@ export function RoomCreation({ onCreated, onClose, onReviewed, dialog = false, p
           onChange={event => { setDraft(event.target.value); setInvalid(''); }} />
         {fieldError && <p id="create-room-error" className="field-error" role="alert">{fieldError}</p>}
       </div>
-      {saving ? <p role="status" className="room-create-progress">Creando sala…</p> :
-        !notice && <p className="room-create-note">El identificador se asigna al crear la sala.</p>}
+      {saving ? <div role="status" className="room-create-progress">
+        <strong>Creando sala…</strong>
+        <p>Preparando tu espacio.</p>
+      </div> :
+        !notice && !fieldError && <p className="room-create-note">El identificador se asigna al crear la sala.</p>}
       {notice && <div className="room-create-alert" role="alert">
         <strong>{uncertain ? 'Resultado sin confirmar' : 'Error al crear'}</strong>
         <p>{notice}</p>
@@ -230,9 +242,10 @@ export function RoomCreation({ onCreated, onClose, onReviewed, dialog = false, p
     </form>
   </>;
 
-  return <>{(protectNavigation || (dialog && shared)) && <CreationNavigation operation={operation} />}{dialog ? <dialog ref={modal} className="room-management-dialog room-management-dialog-create room-create-dialog"
+  const panelClass = `room-management-dialog room-management-dialog-create${created ? ' room-created-panel' : ''}`;
+  return <>{(protectNavigation || (dialog && shared)) && <CreationNavigation operation={operation} />}{dialog ? <dialog ref={modal} className={`${panelClass} room-create-dialog`}
     aria-labelledby="create-room-title" onCancel={event => {
       event.preventDefault();
       close();
-    }}>{content}</dialog> : <section className="room-management-dialog room-management-dialog-create room-create-page">{content}</section>}</>;
+    }}>{content}</dialog> : <section className={`${panelClass} room-create-page`}>{content}</section>}</>;
 }
