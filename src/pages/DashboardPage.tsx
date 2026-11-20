@@ -4,7 +4,7 @@ import { useOptionalAuth } from '../auth/AuthContext';
 import { useRoomOperation } from './roomCreationState';
 import { CopyRoomId, RoomCreation, roomError } from './RoomCreation';
 import { PageTitle } from '../components/PageTitle';
-import { api, ApiError, type Room } from '../services/api';
+import { api, type Room } from '../services/api';
 
 type RoomPreview = Room & { accent: string };
 
@@ -54,22 +54,73 @@ function EmptyRoomsState({ onCreate }: { onCreate: () => void }) {
 function RoomManagementDialog({ dialog, onClose, onSave, onDelete, onJoin }: {
   dialog: Exclude<RoomDialogState, null | { kind: 'create' }>;
   onClose: () => void;
-  onSave: (name: string) => void;
-  onDelete: () => void;
-  onJoin: (id: string) => void;
+  onSave: (name: string) => Promise<void>;
+  onDelete: () => Promise<void>;
+  onJoin: (id: string) => Promise<void>;
 }) {
+  const modal = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const [invalid, setInvalid] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const loadingLabel = {
+    join: ['Uniéndote a la sala…', 'Comprobando el ID de la sala.'],
+    edit: ['Guardando cambios…', 'Actualizando el nombre de la sala.'],
+    delete: ['Eliminando sala…', 'Retirando la sala del listado.'],
+  }[dialog.kind];
+  const errorHeading = {
+    join: 'No pudimos unirte',
+    edit: 'No pudimos guardar los cambios',
+    delete: 'No pudimos eliminar la sala',
+  }[dialog.kind];
+
+  async function submit(action: () => Promise<void>) {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setFeedback('');
+    try {
+      await action();
+    } catch (error) {
+      setFeedback(roomError(error, 'No pudimos completar la operación. Inténtalo de nuevo.'));
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+
+  function cancel(event: FormEvent<HTMLDialogElement>) {
+    event.preventDefault();
+    if (!pending.current) close();
+  }
+
+  function close() {
+    if (typeof modal.current?.close === 'function') modal.current.close();
+    onClose();
+  }
+
+  const notice = busy ? <div className="room-management-status" role="status">
+    <strong>{loadingLabel[0]}</strong>
+    <p>{loadingLabel[1]}</p>
+  </div> : feedback && <div className="room-management-status" role="alert">
+    <strong>{errorHeading}</strong>
+    <p>{feedback}</p>
+  </div>;
   useEffect(() => {
-    setInvalid(false);
+    const element = modal.current;
+    if (element && !element.open) {
+      if (typeof element.showModal === 'function') element.showModal();
+      else element.open = true;
+    }
     (dialog.kind === 'delete' ? cancelButtonRef.current : input.current)?.focus();
   }, [dialog]);
 
   if (dialog.kind !== 'delete') {
     const joining = dialog.kind === 'join';
-    return <div className="room-management-dialog-backdrop">
-      <div className={`room-management-dialog room-management-dialog-${dialog.kind}${invalid ? ` room-management-dialog-${dialog.kind}-error` : ''}`} role="dialog" aria-modal="true" aria-labelledby="manage-room-title" aria-describedby="manage-room-description">
+    return <dialog ref={modal} onCancel={cancel}
+      className={`room-management-dialog room-operation-dialog room-management-dialog-${dialog.kind}${invalid ? ` room-management-dialog-${dialog.kind}-error` : ''}`} role="dialog" aria-modal="true" aria-labelledby="manage-room-title" aria-describedby="manage-room-description" aria-busy={busy}>
         <h2 id="manage-room-title">{joining ? 'Unirse a sala' : 'Editar sala'}</h2>
         <p className="room-management-dialog-description" id="manage-room-description">
           {joining ? 'Ingresa únicamente el ID de la sala que te compartieron.' : 'Actualiza el nombre de tu sala. Los cambios se aplicarán a todos sus participantes.'}
@@ -78,37 +129,38 @@ function RoomManagementDialog({ dialog, onClose, onSave, onDelete, onJoin }: {
           event.preventDefault();
           const value = input.current?.value.trim() ?? '';
           if (!value) { setInvalid(true); input.current?.focus(); return; }
-          if (joining) onJoin(value);
-          else onSave(value);
+          void submit(() => joining ? onJoin(value) : onSave(value));
         }}>
           <div className="form-field">
             <label htmlFor="manage-room-input">{joining ? 'ID de la sala' : 'Nombre de la sala'}</label>
             <input id="manage-room-input" ref={input} defaultValue={joining ? '' : dialog.room.name}
-              placeholder={joining ? 'Ej. CALC-8F2K' : undefined} aria-invalid={invalid} aria-describedby={invalid ? 'manage-room-error' : undefined}
-              onChange={() => setInvalid(false)} />
+              placeholder={joining ? 'Ej. CALC-8F2K' : undefined} disabled={busy} aria-invalid={invalid} aria-describedby={invalid ? 'manage-room-error' : undefined}
+              onChange={() => { setInvalid(false); setFeedback(''); }} />
           </div>
           {invalid && <p id="manage-room-error" className="room-management-dialog-field-error" role="alert">
             {joining ? 'Ingresa el código de la Sala para continuar' : 'Revisa el nombre de la Sala antes de guardar.'}
           </p>}
           {!joining && <><div className="form-field room-management-dialog-id-field"><label htmlFor="edit-room-id">ID de la sala</label><input className="room-management-dialog-readonly" id="edit-room-id" value={`${dialog.room.id}  ·  No editable`} readOnly aria-readonly="true" /></div><p className="room-management-dialog-helper">El ID se mantiene igual aunque cambies el nombre.</p></>}
           {joining && <p className="room-management-dialog-helper room-management-dialog-join-helper">No necesitas correo, nombre ni contraseña para unirte desde aquí.</p>}
+          {notice}
           <div className="room-management-dialog-actions">
-            <button className="button secondary" type="button" onClick={onClose}>Cancelar</button>
-            <button className="button primary" type="submit">{joining ? 'Unirse a la sala' : 'Guardar cambios'}</button>
+            <button className="button secondary" type="button" disabled={busy} onClick={close}>Cancelar</button>
+            <button className="button primary" type="submit" disabled={busy}>{joining ? 'Unirse a la sala' : 'Guardar cambios'}</button>
           </div>
         </form>
-      </div>
-    </div>;
+    </dialog>;
   }
 
-  return <div className="room-management-dialog-backdrop">
-    <div className="room-management-dialog room-management-dialog-delete" role="dialog" aria-modal="true" aria-labelledby="delete-room-title" aria-describedby="delete-room-description delete-room-warning">
+  return <dialog ref={modal} onCancel={cancel} className="room-management-dialog room-operation-dialog room-management-dialog-delete" role="dialog" aria-modal="true" aria-labelledby="delete-room-title" aria-describedby="delete-room-description delete-room-warning" aria-busy={busy}>
       <h2 id="delete-room-title">¿Eliminar esta sala?</h2>
       <p id="delete-room-description">Vas a eliminar «{dialog.room.name}». La Sala dejará de estar disponible para ti y sus participantes.</p>
       <div className="room-management-dialog-warning" id="delete-room-warning">Esta acción no se puede deshacer.</div>
-      <div className="room-management-dialog-actions"><button ref={cancelButtonRef} className="button secondary" type="button" onClick={onClose}>Cancelar</button><button className="button room-management-dialog-danger" type="button" onClick={onDelete}>Eliminar sala</button></div>
-    </div>
-  </div>;
+      {notice}
+      <div className="room-management-dialog-actions">
+        <button ref={cancelButtonRef} className="button secondary" type="button" disabled={busy} onClick={close}>Cancelar</button>
+        <button className="button room-management-dialog-danger" type="button" disabled={busy} onClick={() => void submit(onDelete)}>Eliminar sala</button>
+      </div>
+  </dialog>;
 }
 
 function RoomCard({ room, openMenu, onToggleMenu, onEdit, onDelete, menuButtonRef }: { room: RoomPreview; openMenu: boolean; onToggleMenu: () => void; onEdit: () => void; onDelete: () => void; menuButtonRef: (button: HTMLButtonElement | null) => void }) {
@@ -146,6 +198,7 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
   const [managementDialog, setManagementDialog] = useState<RoomDialogState>(null);
   const menuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const dialogRoomId = useRef<string | null>(null);
+  const joinTrigger = useRef<HTMLButtonElement>(null);
   const [status, setStatus] = useState<DashboardStatus>('loading');
   const [loadError, setLoadError] = useState('');
   const [partial, setPartial] = useState(false);
@@ -164,11 +217,7 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
   useEffect(() => {
     if (!openMenu && !managementDialog) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (managementDialog?.kind === 'create') return;
-        if (managementDialog) setManagementDialog(null);
-        else setOpenMenu(null);
-      }
+      if (event.key === 'Escape' && !managementDialog) setOpenMenu(null);
     };
     const handlePointerDown = (event: PointerEvent) => {
       if (openMenu && event.target instanceof Element && !event.target.closest('[data-room-menu]')) setOpenMenu(null);
@@ -212,7 +261,13 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
     return () => { active.current = false; sequence.current++; };
   }, [uid]);
 
-  const handleSaveRoom = async (name: string) => { if (!managementDialog || managementDialog.kind !== 'edit') return; try { const updated = await api.updateRoom(managementDialog.room.id, { name }); setRoomList(current => current.map(room => room.id === updated.id ? { ...room, ...toPreview(updated, current.indexOf(room)) } : room)); setManagementDialog(null); } catch { setStatus('error'); } };
+  async function handleSaveRoom(name: string) {
+    if (managementDialog?.kind !== 'edit') return;
+    const updated = await api.updateRoom(managementDialog.room.id, { name });
+    if (!active.current) return;
+    setRoomList(current => current.map((room, index) => room.id === updated.id ? { ...room, ...toPreview(updated, index) } : room));
+    setManagementDialog(null);
+  }
 
   function handleCreateRoom(room: Room) {
     createdDuringLoad.current = [room, ...createdDuringLoad.current.filter(item => item.id !== room.id)];
@@ -231,17 +286,28 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
     }
   }, [creation, shared]);
   const navigate = useNavigate();
-  const handleJoinRoom = async (id: string) => { try { await api.joinRoom(id); setManagementDialog(null); navigate(`/salas/${encodeURIComponent(id)}`); } catch { setStatus('error'); } };
-  const handleDeleteRoom = async () => {
-    if (!managementDialog || managementDialog.kind !== 'delete') return;
-    try { await api.deleteRoom(managementDialog.room.id); if (creation.phase === 'created' && creation.room.id === managementDialog.room.id) operation.set({ phase: 'idle' }); setRoomList(current => current.filter(room => room.id !== managementDialog.room.id)); setManagementDialog(null); } catch { setStatus('error'); }
-  };
+  async function handleJoinRoom(id: string) {
+    await api.joinRoom(id);
+    if (!active.current) return;
+    setManagementDialog(null);
+    navigate(`/salas/${encodeURIComponent(id)}`);
+  }
+
+  async function handleDeleteRoom() {
+    if (managementDialog?.kind !== 'delete') return;
+    const { id } = managementDialog.room;
+    await api.deleteRoom(id);
+    if (!active.current) return;
+    if (creation.phase === 'created' && creation.room.id === id) operation.set({ phase: 'idle' });
+    setRoomList(current => current.filter(room => room.id !== id));
+    setManagementDialog(null);
+  }
   const loading = status === 'loading';
   const error = status === 'error';
   return <section className="dashboard">
     <div className="dashboard-heading">
       <div><PageTitle title="Tus salas" /><p>Continúa donde lo dejaste o crea una sala para tu próximo encuentro.</p></div>
-      <div className="actions"><button className="button primary" type="button" onClick={() => setManagementDialog({ kind: 'create' })}>＋ Crear sala</button><button className="button secondary" type="button" onClick={() => setManagementDialog({ kind: 'join' })}>＋ Unirse a sala</button></div>
+      <div className="actions"><button className="button primary" type="button" onClick={() => setManagementDialog({ kind: 'create' })}>＋ Crear sala</button><button ref={joinTrigger} className="button secondary" type="button" onClick={() => setManagementDialog({ kind: 'join' })}>＋ Unirse a sala</button></div>
     </div>
     <section className="rooms-section" data-state={status} aria-labelledby="recent-rooms-title" aria-busy={loading}>
       <div className="rooms-section-heading"><h2 id="recent-rooms-title">Salas recientes</h2>{status === 'success' && roomList.length > 0 && <span>{roomList.length} {roomList.length === 1 ? 'sala' : 'salas'}</span>}</div>
@@ -255,6 +321,9 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
     </section>
     <p className="private-note"><img src="/assets/figma/status-dot.svg" alt="" /> Comparte el ID solo con las personas invitadas.</p>
     {managementDialog?.kind === 'create' && <RoomCreation dialog onClose={() => setManagementDialog(null)} onCreated={handleCreateRoom} onReviewed={rooms => { sequence.current++; acceptRooms(rooms); setPartial(false); }} />}
-    {managementDialog && managementDialog.kind !== 'create' && <RoomManagementDialog dialog={managementDialog} onClose={() => setManagementDialog(null)} onSave={handleSaveRoom} onDelete={handleDeleteRoom} onJoin={handleJoinRoom} />}
+    {managementDialog && managementDialog.kind !== 'create' && <RoomManagementDialog dialog={managementDialog} onClose={() => {
+      if (managementDialog.kind === 'join') joinTrigger.current?.focus();
+      setManagementDialog(null);
+    }} onSave={handleSaveRoom} onDelete={handleDeleteRoom} onJoin={handleJoinRoom} />}
   </section>;
 }

@@ -65,7 +65,12 @@ describe('PlaceholderPages', () => {
 
   it('aligns verification actions with the authentication card', () => {
     renderPage(<EmailVerificationPage />);
-    expect(screen.getByRole('button', { name: 'Ya verifiqué mi correo' }).parentElement).toHaveClass('verification-actions');
+    const verify = screen.getByRole('button', { name: 'Ya verifiqué mi correo' });
+    const resend = screen.getByRole('button', { name: 'Reenviar correo' });
+    const card = verify.closest('.auth-card');
+    expect(card).toContainElement(screen.getByRole('heading', { name: 'Verifica tu correo' }));
+    expect(card).toContainElement(resend);
+    expect(verify.parentElement).toBe(resend.parentElement);
   });
 
   it('recovers a password and reports service errors', async () => {

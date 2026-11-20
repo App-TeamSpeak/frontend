@@ -147,6 +147,18 @@ test('crea una sala propia, copia el ID real y confirma el ingreso como anfitri�
   await expect(confirmation.getByRole('heading')).toBeFocused();
   await expect(confirmation.getByText(room.name)).toBeVisible();
   await page.screenshot({ path: info.outputPath('crear-exito.png'), scale: 'css' });
+  if (!mobile) {
+    for (const [width, height] of [[768, 1024], [800, 600], [800, 360], [320, 640]]) {
+      await page.setViewportSize({ width, height });
+      await expect(confirmation.getByText(`ID ${room.roomId}`)).toBeVisible();
+      const exit = confirmation.getByRole('link', { name: 'Entrar' });
+      await exit.scrollIntoViewIfNeeded();
+      await expect(exit).toBeInViewport();
+      expect(await confirmation.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`crear-exito-${width}x${height}.png`), scale: 'css' });
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
   await confirmation.getByRole('button', { name: 'Ir a mis salas' }).click();
   const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: room.name }) });
   await expect(card.getByText(`ID ${room.roomId}`)).toBeVisible();
@@ -184,7 +196,7 @@ for (const scenario of ['success', 'uncertain'] as const) {
     await expect.poll(() => posts.length).toBe(1);
     await page.getByRole('navigation', { name: 'Navegación del panel' }).getByRole('link', { name: 'Mis salas' }).click();
     await expect(page).toHaveURL(/\/salas\/crear$/);
-    await expect(page.getByRole('status')).toHaveText('Creando sala…');
+    await expect(page.getByRole('status')).toContainText('Creando sala…');
     await page.screenshot({ path: info.outputPath('creacion-navegacion-pendiente.png'), scale: 'css' });
     if (scenario === 'success') enableList();
     finishList();
@@ -279,4 +291,161 @@ test('US-06 conserva accesibles los diálogos de administración y las rutas dir
   await page.goto('/salas/unirse');
   await expect(page.getByLabel('ID de la sala')).toBeVisible();
   await page.screenshot({ path: info.outputPath('US06-unirse-ruta-directa.png'), scale: 'css' });
+});
+
+test('US-06 muestra el progreso y los errores en el diálogo que inició la operación', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await stubRooms(page);
+  await page.route('**/api/rooms', route => route.fulfill({ json: { success: true, data: [room] } }));
+  const capture = (name: string) => page.screenshot({ path: info.outputPath(`${name}.png`), scale: 'css' });
+  const requests: string[] = [];
+  let release!: () => void;
+  const heldJoin = new Promise<void>(resolve => { release = resolve; });
+  const errors = ['ROOM_NOT_FOUND', 'ROOM_ACCESS_DENIED', 'FIRESTORE_UNAVAILABLE'];
+  let joins = 0;
+  await page.route('**/api/rooms/*/join', async route => {
+    expect(route.request().method()).toBe('POST');
+    const code = errors[joins++];
+    if (joins === 1) await heldJoin;
+    if (code) {
+      await route.fulfill({ status: code === 'ROOM_NOT_FOUND' ? 404 : code === 'ROOM_ACCESS_DENIED' ? 403 : 503,
+        json: { success: false, code, message: 'Error sintético' } });
+    } else {
+      await route.fulfill({ json: { success: true, data: room } });
+    }
+  });
+  const releases = new Map<string, () => void>();
+  await page.route(`**/api/rooms/${room.roomId}`, async route => {
+    const method = route.request().method();
+    if (method !== 'PATCH' && method !== 'DELETE') { await route.fallback(); return; }
+    const alreadyTried = requests.includes(method);
+    requests.push(method);
+    if (!alreadyTried) {
+      await new Promise<void>(resolve => releases.set(method, resolve));
+      await route.fulfill({ status: 503,
+        json: { success: false, code: 'FIRESTORE_UNAVAILABLE', message: 'Error sintético' } });
+      return;
+    }
+    if (method === 'PATCH') expect(route.request().postDataJSON()).toEqual({ name: 'Cálculo avanzado' });
+    await route.fulfill({ json: { success: true, data: method === 'PATCH' ? { ...room, name: 'Cálculo avanzado' } : {} } });
+  });
+  await page.goto('/dashboard');
+  await expect(page.getByRole('heading', { name: room.name })).toBeVisible();
+  const openJoin = page.getByRole('button', { name: 'Unirse a sala' });
+  await openJoin.click();
+  const join = page.getByRole('dialog', { name: 'Unirse a sala' });
+  const joinSubmit = join.getByRole('button', { name: 'Unirse a la sala' });
+  await joinSubmit.click();
+  await expect(join.getByRole('alert')).toContainText('Ingresa el código');
+  await capture('unirse-vacio');
+  await join.getByLabel('ID de la sala').fill(room.roomId);
+  await capture('unirse-diligenciado');
+  await joinSubmit.click();
+  await expect(join.getByRole('status')).toContainText('Uniéndote a la sala…');
+  await expect(joinSubmit).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(join).toBeVisible();
+  await capture('unirse-procesando');
+  release();
+  await expect(join.getByRole('alert')).toContainText('La sala no existe.');
+  await capture('unirse-inexistente');
+  await joinSubmit.click();
+  await expect(join.getByRole('alert')).toContainText('No tienes acceso a esta sala.');
+  await capture('unirse-denegado');
+  await joinSubmit.click();
+  await expect(join.getByRole('alert')).toContainText('El servicio no está disponible');
+  await capture('unirse-error');
+  if (!mobile) {
+    for (const [width, height] of [[768, 1024], [800, 600], [800, 360], [320, 640]]) {
+      await page.setViewportSize({ width, height });
+      await joinSubmit.scrollIntoViewIfNeeded();
+      await expect(joinSubmit).toBeInViewport();
+      expect(await join.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await capture(`unirse-error-${width}x${height}`);
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
+  await join.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(openJoin).toBeFocused();
+
+  await page.getByRole('button', { name: /Más opciones de Cálculo II/ }).click();
+  await capture('sala-menu');
+  await page.getByRole('menuitem', { name: 'Editar sala' }).click();
+  const edit = page.getByRole('dialog', { name: 'Editar sala' });
+  const editName = edit.getByLabel('Nombre de la sala');
+  const save = edit.getByRole('button', { name: 'Guardar cambios' });
+  await editName.fill('');
+  await save.click();
+  await expect(edit.getByRole('alert')).toContainText('Revisa el nombre');
+  await capture('editar-sala-validacion');
+  await editName.fill('Cálculo avanzado');
+  await save.click();
+  await expect(edit.getByRole('status')).toContainText('Guardando cambios…');
+  await expect(save).toBeDisabled();
+  await capture('editar-sala-procesando');
+  await expect.poll(() => releases.has('PATCH')).toBe(true);
+  releases.get('PATCH')?.();
+  await expect(edit.getByRole('alert')).toContainText('El servicio no está disponible');
+  await expect(editName).toHaveValue('Cálculo avanzado');
+  await capture('editar-sala-error');
+  await save.click();
+  await expect(edit).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Cálculo avanzado' })).toBeVisible();
+  await capture('editar-sala-guardada');
+
+  await page.getByRole('button', { name: 'Más opciones de Cálculo avanzado' }).click();
+  await page.getByRole('menuitem', { name: 'Eliminar sala' }).click();
+  const remove = page.getByRole('dialog', { name: '¿Eliminar esta sala?' });
+  const deleteButton = remove.getByRole('button', { name: 'Eliminar sala' });
+  await deleteButton.click();
+  await expect(remove.getByRole('status')).toContainText('Eliminando sala…');
+  await expect(deleteButton).toBeDisabled();
+  await capture('eliminar-sala-procesando');
+  await expect.poll(() => releases.has('DELETE')).toBe(true);
+  releases.get('DELETE')?.();
+  await expect(remove.getByRole('alert')).toContainText('El servicio no está disponible');
+  await capture('eliminar-sala-error');
+  await deleteButton.click();
+  await expect(remove).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'No tienes salas' })).toBeVisible();
+  await capture('eliminar-sala-completada');
+  expect(requests).toEqual(['PATCH', 'PATCH', 'DELETE', 'DELETE']);
+
+  await openJoin.click();
+  await join.getByLabel('ID de la sala').fill(room.roomId);
+  await joinSubmit.click();
+  await expect(page).toHaveURL(new RegExp(`/salas/${room.roomId}$`));
+  await capture('unirse-acceso');
+  expect(joins).toBe(4);
+});
+
+test('US-06 mantiene legibles las tarjetas con nombres y códigos largos', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  const base = mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+  await page.setViewportSize(base);
+  await stubRooms(page);
+  const ownRooms = Array.from({ length: 6 }, (_, i) => ({
+    ...room, roomId: `id-largo-${i}-${'synthetic'.repeat(7)}`,
+    name: i === 0 ? 'Proyecto de arquitectura de software y estructuras para el grupo de estudio' : `Grupo de estudio ${i + 1}`,
+  }));
+  let count = 1;
+  await page.route('**/api/rooms', route => route.fulfill({
+    json: { success: true, data: [...ownRooms.slice(0, count), { ...room, roomId: 'foreign', name: 'Sala ajena', ownerId: 'otro' }] },
+  }));
+  for (count of [1, 2, 3, 6]) {
+    await page.goto('/dashboard');
+    await expect(page.locator('.room-card')).toHaveCount(count);
+    await expect(page.getByRole('heading', { name: 'Sala ajena' })).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath(`dashboard-capacidad-${count}.png`), fullPage: true, scale: 'css' });
+  }
+  if (mobile) return;
+  for (const [width, height] of [[768, 1024], [800, 600], [800, 360], [320, 640]]) {
+    await page.setViewportSize({ width, height });
+    const enter = page.getByRole('link', { name: /Entrar/ }).first();
+    await enter.scrollIntoViewIfNeeded();
+    await expect(enter).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    await page.screenshot({ path: info.outputPath(`dashboard-responsivo-${width}x${height}.png`), scale: 'css' });
+  }
 });

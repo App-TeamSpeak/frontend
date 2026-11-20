@@ -164,14 +164,16 @@ describe('US-04', () => {
   it('preserves avatar compatibility and sends null to remove an existing image', async () => {
     mocks.getProfile.mockResolvedValue({ isCurrent: () => true, response: { ...response, profile: { ...profile, avatarUrl: 'https://example.test/image.png' } } });
     await edit();
+    click('Cambiar foto');
     const avatar = screen.getByLabelText('Avatar HTTPS (opcional)');
-    fireEvent.click(screen.getByText('Opciones de avatar'));
     fireEvent.change(avatar, { target: { value: 'http://example.test/image.png' } });
-    click('Guardar cambios');
+    click('Ver vista previa');
     expect(avatar).toHaveAttribute('aria-invalid', 'true');
     expect(mocks.update).not.toHaveBeenCalled();
     fireEvent.change(avatar, { target: { value: '' } });
-    expect(avatar.closest('details')).toHaveAttribute('open');
+    click('Ver vista previa');
+    click('Usar iniciales');
+    expect(mocks.update).not.toHaveBeenCalled();
     click('Guardar cambios');
     expect(await screen.findByText('Cambios guardados.')).toBeInTheDocument();
     expect(mocks.update).toHaveBeenCalledExactlyOnceWith({ avatarUrl: null });
