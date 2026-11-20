@@ -621,6 +621,8 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .user-profile-card { padding: 26px 29px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
 .user-profile-grid > .user-profile-card { min-height: 445px; }
 .user-profile-card > h2 { font-size: 21px; }
+.user-profile-tracking { margin-top: 16px; }
+.user-profile-tracking .button { max-width: 100%; text-align: center; }
 .user-profile-identity { display: flex; align-items: center; gap: 20px; margin: 22px 0 24px; overflow-wrap: anywhere; }
 .user-profile-identity strong { font: 600 19px 'Inter Variable', sans-serif; }
 .user-profile-avatar { display: grid; place-items: center; width: 68px; height: 68px; flex: 0 0 auto; overflow: hidden; border-radius: 50%; background: var(--avatar-blue); color: #c9dbff; font: 600 20px 'Inter Variable', sans-serif; }
