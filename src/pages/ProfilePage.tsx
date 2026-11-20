@@ -1,5 +1,5 @@
 import { ProfileEmailChange } from '../components/ProfileEmailChange';
-import { AccountDeletionDialog } from '../components/AccountDeletionDialog';
+import { AccountDeletionDialog, AccountDeletionTrackingButton } from '../components/AccountDeletionDialog';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useBlocker } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -315,6 +315,7 @@ function ProfileContent({ uid }: { uid: string }) {
             focusHeading();
           }}>Editar perfil</button>}
         </>}
+        <AccountDeletionTrackingButton uid={uid} />
       </section>
       <div className={`user-profile-account${editing ? ' user-profile-account-editing' : ''}`}>
         <div className={`user-profile-card user-profile-settings${profile && !draft ? ' user-profile-settings-view' : ''}`}>

@@ -14,6 +14,10 @@ type Attempt = {
   completed?: boolean;
 };
 const OpenDeletion = createContext<((trigger: HTMLButtonElement) => void) | null>(null);
+const OpenTracking = createContext<{
+  uid: string;
+  open: (trigger: HTMLButtonElement) => void;
+} | null>(null);
 const DeletionCompleted = createContext(false);
 export function useAccountDeletionCompleted() { return useContext(DeletionCompleted); }
 
@@ -28,6 +32,15 @@ export function AccountDeletionDialog() {
   const open = useContext(OpenDeletion);
   return <button className="button room-management-dialog-danger" type="button"
     onClick={event => open?.(event.currentTarget)}>Eliminar cuenta</button>;
+}
+
+export function AccountDeletionTrackingButton({ uid }: { uid: string }) {
+  const tracking = useContext(OpenTracking);
+  if (tracking?.uid !== uid) return null;
+  return <div className="user-profile-tracking">
+    <button className="button secondary" type="button"
+      onClick={event => tracking.open(event.currentTarget)}>Ver seguimiento de eliminación</button>
+  </div>;
 }
 
 export function AccountDeletionProvider({ children }: { children: ReactNode }) {
@@ -287,17 +300,23 @@ export function AccountDeletionProvider({ children }: { children: ReactNode }) {
   const provider = currentFirebaseUser()?.providerData ?? [];
   const canCheck = phase === 'pending' || phase === 'unknown';
   const showConfirmation = phase === 'confirm' || phase === 'reauth';
+  const active = attempt.current;
+  const tracking = !loading && active?.token && user?.id === active.uid &&
+    currentFirebaseUser()?.uid === active.uid && (canCheck || phase === 'blocked')
+    ? { uid: active.uid, open: openTracking } : null;
+
+  function openTracking(button: HTMLButtonElement) {
+    if (!tracking || visible || currentFirebaseUser()?.uid !== tracking.uid) return;
+    trigger.current = button;
+    setVisible(true);
+    dialog.current?.showModal();
+    cancel.current?.focus();
+  }
+
   return <OpenDeletion.Provider value={open}>
     <DeletionCompleted.Provider value={phase === 'completed' && !visible && !user}>
-      {children}
+      <OpenTracking.Provider value={tracking}>{children}</OpenTracking.Provider>
     </DeletionCompleted.Provider>
-    {!visible && (canCheck || phase === 'blocked') && attempt.current && current(attempt.current) &&
-      <button className="button secondary" type="button" onClick={event => {
-        trigger.current = event.currentTarget;
-        setVisible(true);
-        dialog.current?.showModal();
-        cancel.current?.focus();
-      }}>Ver seguimiento de eliminación</button>}
     <dialog ref={dialog} className="room-management-dialog user-profile-dialog profile-delete-dialog"
       aria-labelledby={`${id}-title`} aria-describedby={`${id}-warning`}
       onCancel={event => { if (operation.current || attempt.current?.completed) event.preventDefault(); }}

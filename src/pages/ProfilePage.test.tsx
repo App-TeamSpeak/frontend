@@ -1,9 +1,9 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import { AccountDeletionProvider } from '../components/AccountDeletionDialog';
-import { readDeletionTracking } from '../services/deletionTracking';
+import { readDeletionTracking, saveDeletionTracking } from '../services/deletionTracking';
 import { ProfilePage } from './ProfilePage';
 import { ProfileEmailChange } from '../components/ProfileEmailChange';
 
@@ -394,6 +394,31 @@ describe('US-05', () => {
   });
 
 
+  it.each(['pending', 'blocked'] as const)('muestra seguimiento %s dentro de la tarjeta y abre el diálogo', async phase => {
+    saveDeletionTracking('u1', { token: 'a'.repeat(64), phase });
+    if (phase === 'blocked') mocks.getProfile.mockRejectedValueOnce(error(403, 'ACCOUNT_DELETION_BLOCKED'));
+    openProfile();
+    const card = screen.getByRole('region', { name: 'Información personal' });
+    if (phase === 'blocked') expect(await within(card).findByRole('alert')).toHaveTextContent('Tu cuenta no tiene acceso al perfil');
+    else await within(card).findByText(profile.email);
+    const button = within(card).getByRole('button', { name: 'Ver seguimiento de eliminación' });
+    expect(screen.getAllByRole('button', { name: 'Ver seguimiento de eliminación' })).toEqual([button]);
+    expect(card.lastElementChild).toContainElement(button);
+    fireEvent.click(button);
+    const dialog = screen.getByRole('dialog', { name: 'Eliminar cuenta' });
+    expect(dialog).toHaveTextContent(phase === 'blocked' ? 'El proceso está bloqueado' : 'La eliminación aún está pendiente');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cerrar' }));
+    expect(button).toHaveFocus();
+    expect(mocks.deleteAccount).not.toHaveBeenCalled();
+  });
+
+  it('omite el seguimiento de otra identidad', async () => {
+    saveDeletionTracking('u2', { token: 'a'.repeat(64), phase: 'blocked' });
+    openProfile();
+    await screen.findByText(profile.email);
+    expect(screen.queryByRole('button', { name: 'Ver seguimiento de eliminación' })).not.toBeInTheDocument();
+  });
+
   it('recupera tras recargar sin Firebase y vuelve a consultar luego de un fallo temporal', async () => {
     mocks.deleteAccount.mockRejectedValueOnce(new TypeError('offline'));
     const status = vi.spyOn(api, 'getDeletionStatus')
@@ -409,10 +434,10 @@ describe('US-05', () => {
       page.unmount();
       mocks.signedOut = true;
       openProfile();
-      click('Ver seguimiento de eliminación');
-      click('Consultar estado');
-      await screen.findByText(/no pudimos comprobar el estado/i);
-      click('Consultar estado');
+      expect(screen.queryByRole('button', { name: 'Ver seguimiento de eliminación' })).not.toBeInTheDocument();
+      await act(async () => { window.dispatchEvent(new Event('online')); });
+      expect(status).toHaveBeenCalledOnce();
+      fireEvent(window, new Event('online'));
       await screen.findByRole('heading', { name: 'Iniciar sesión' });
       expect(status.mock.calls.map(([receipt]) => receipt)).toEqual([token, token]);
       expect(readDeletionTracking('u1')).toBeNull();

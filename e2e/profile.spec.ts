@@ -437,6 +437,7 @@ test('US-05 espera la confirmación por token y vuelve al login tras un solo DEL
   await expect(page.locator('.auth-card').getByRole('status')).toHaveText('El servidor confirmó la eliminación de tu cuenta.');
   expect(deletions).toBe(1);
   expect(lookups).toBe(1);
+  await expect(page.getByRole('button', { name: 'Ver seguimiento de eliminación' })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('us05-completada.png'), scale: 'css' });
 });
 
@@ -516,9 +517,42 @@ test('US-05 recupera una respuesta perdida tras recargar sin identidad Firebase'
   });
 
   await page.reload();
-  await page.getByRole('button', { name: 'Ver seguimiento de eliminación' }).click();
-  await dialog.getByRole('button', { name: 'Consultar estado' }).click();
   await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole('button', { name: 'Ver seguimiento de eliminación' })).toHaveCount(0);
   await expect(page.locator('.auth-card').getByRole('status')).toHaveText('El servidor confirmó la eliminación de tu cuenta.');
   expect(deletions).toBe(1);
+});
+
+test('US-05 coloca el seguimiento bloqueado al pie de Información personal y solo en perfil', async ({ page }) => {
+  const { setProfileError } = await stubProfile(page);
+  await page.addInitScript(() => {
+    sessionStorage.setItem('teamspeak.deletion.receipt.us04-test', JSON.stringify({
+      token: 'a'.repeat(64), phase: 'blocked',
+    }));
+  });
+  setProfileError({ status: 403, code: 'ACCOUNT_DELETION_BLOCKED' });
+  const tracking = page.getByRole('button', { name: 'Ver seguimiento de eliminación' });
+  await page.goto('/perfil');
+  const card = page.getByRole('region', { name: 'Información personal' });
+  await expect(card.getByRole('alert')).toContainText('Tu cuenta no tiene acceso al perfil');
+  await expect(card.getByRole('button', { name: 'Ver seguimiento de eliminación' })).toBeVisible();
+  await expect(tracking).toHaveCount(1);
+  const geometry = await card.evaluate(element => {
+    const heading = element.querySelector('h2')!.getBoundingClientRect();
+    const button = element.querySelector('.user-profile-tracking button')!.getBoundingClientRect();
+    const bounds = element.getBoundingClientRect();
+    return { aligned: Math.abs(heading.left - button.left) < 1, contained: button.right <= bounds.right && button.bottom <= bounds.bottom };
+  });
+  expect(geometry).toEqual({ aligned: true, contained: true });
+  await tracking.click();
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  await expect(dialog.getByRole('alert')).toContainText('Contacta a soporte');
+  await dialog.getByRole('button', { name: 'Cerrar' }).click();
+  await expect(tracking).toBeFocused();
+
+  for (const [path, heading] of [['/dashboard', 'Tus salas'], ['/salas/crear', 'Crear sala'], ['/ayuda', 'Ayuda']]) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+    await expect(tracking).toHaveCount(0);
+  }
 });
