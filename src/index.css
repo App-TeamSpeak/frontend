@@ -3737,16 +3737,32 @@ button:disabled {
   color: var(--error);
 }
 
+.room-chat-viewport {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 28px;
+}
+
 .room-chat-new-messages {
-  align-self: flex-start;
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 2;
+  max-width: calc(100% - 16px);
   min-height: 36px;
-  margin-top: 10px;
+  margin-top: 0;
   padding: 6px 12px;
   border: 1px solid #286a56;
   border-radius: 10px;
   background: #103c30;
   color: var(--success);
   font: 600 12px/1.2 'Inter Variable', sans-serif;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  box-shadow: 0 6px 18px rgb(2 6 23 / 55%);
 }
 
 .room-chat-new-messages:hover {
@@ -3765,7 +3781,7 @@ button:disabled {
   flex: 1 1 auto;
   gap: 16px;
   min-height: 0;
-  margin-top: 28px;
+  margin-top: 0;
   overflow: auto;
 }
 
@@ -4583,7 +4599,7 @@ button:disabled {
   }
 
   .room-chat-new-messages {
-    width: 100%;
+    width: calc(100% - 16px);
   }
 }
 

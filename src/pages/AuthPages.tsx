@@ -1,5 +1,5 @@
 import { useAccountDeletionCompleted } from '../components/AccountDeletionDialog';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { PageTitle } from '../components/PageTitle';
 import { useOptionalAuth } from '../auth/AuthContext';
@@ -48,6 +48,18 @@ export function AuthPage({ register = false }: { register?: boolean }) {
   const [googlePending, setGooglePending] = useState(false);
   const [googleError, setGoogleError] = useState(() => location.state?.googleError === true);
   const [errorField, setErrorField] = useState<'email' | 'password' | null>(null); const navigate = useNavigate(); const auth = useOptionalAuth();
+  const passwordHelpTriggerRef = useRef<HTMLButtonElement>(null);
+  const passwordHelpCloseRef = useRef<HTMLButtonElement>(null);
+  const wasPasswordHelpOpenRef = useRef(false);
+  useEffect(() => {
+    if (passwordHelpOpen) {
+      wasPasswordHelpOpenRef.current = true;
+      passwordHelpCloseRef.current?.focus();
+    } else if (wasPasswordHelpOpenRef.current) {
+      wasPasswordHelpOpenRef.current = false;
+      passwordHelpTriggerRef.current?.focus();
+    }
+  }, [passwordHelpOpen]);
   useEffect(() => { if (!passwordHelpOpen) return; const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setPasswordHelpOpen(false); }; document.addEventListener('keydown', closeWithEscape); return () => document.removeEventListener('keydown', closeWithEscape); }, [passwordHelpOpen]);
   const fields = register ? [{ name: 'nombre', label: 'Nombre', placeholder: 'Tu nombre', type: 'text', autoComplete: 'given-name' }, { name: 'apellido', label: 'Apellido', placeholder: 'Tu apellido', type: 'text', autoComplete: 'family-name' }, { name: 'email', label: 'Correo electrónico', placeholder: 'nombre@universidad.edu', type: 'email', autoComplete: 'email' }, { name: 'password', label: 'Contraseña', placeholder: '••••••••••••', type: 'password', autoComplete: 'new-password' }, { name: 'confirm', label: 'Confirmar contraseña', placeholder: '••••••••••••', type: 'password', autoComplete: 'new-password' }] : [{ name: 'email', label: 'Correo electrónico', placeholder: 'nombre@universidad.edu', type: 'email', autoComplete: 'username' }, { name: 'password', label: 'Contraseña', placeholder: '••••••••••••', type: 'password', autoComplete: 'current-password' }];
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (authStatus === 'loading') return; const form = event.currentTarget; const data = new FormData(form); const next: Record<string, string> = {}; for (const field of fields) if (!String(data.get(field.name) ?? '').trim()) next[field.name] = `Completa el campo ${field.label.toLowerCase()}.`; if (data.get('email') && !isValidEmail(String(data.get('email')))) next.email = 'Introduce un correo electrónico válido.'; if (register && String(data.get('password') ?? '').length < 6) next.password = 'La contraseña debe tener al menos 6 caracteres.'; if (register && isValidEmail(String(data.get('password') ?? ''))) next.password = 'La contraseña no puede ser un correo electrónico. Usa una combinación de letras, números y símbolos.'; if (register && data.get('confirm') && data.get('password') !== data.get('confirm')) next.confirm = 'Las contraseñas no coinciden.'; setErrors(next); setServerError(''); setErrorField(null); if (Object.keys(next).length) { setAuthStatus('idle'); form.querySelector<HTMLInputElement>(`[name="${Object.keys(next)[0]}"]`)?.focus(); return; } setAuthStatus('loading'); try { const result = register ? await registerUser({ nombre: String(data.get('nombre')), apellido: String(data.get('apellido')), email: String(data.get('email')), password: String(data.get('password')) }) : await loginUser({ email: String(data.get('email')), password: String(data.get('password')) }); auth?.setUser(result.user); setAuthStatus('success'); navigate(register ? '/verificar-correo' : result.user.profileError ? '/perfil' : result.user.username ? '/dashboard' : '/completar-username'); } catch (error) { setAuthStatus('error');
@@ -91,7 +103,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             return <div className={`form-field auth-field-${field.name}`} key={field.name}>
               <div className="password-label-row">
                 <label htmlFor={inputProps.id}>{field.label}</label>
-                {register && field.name === 'password' && <button className="password-help-trigger" type="button" onClick={() => setPasswordHelpOpen(true)}>¿Qué contraseña usar?</button>}
+                {register && field.name === 'password' && <button ref={passwordHelpTriggerRef} className="password-help-trigger" type="button" onClick={() => setPasswordHelpOpen(true)}>¿Qué contraseña usar?</button>}
               </div>
               {isPassword ? <div className="password-field">
                 <input {...inputProps} type={visible ? 'text' : 'password'}
@@ -122,7 +134,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
       <button className="button primary auth-submit" type="button" onClick={() => void google()}>Reintentar</button>
       <Link className="auth-return" to="/login" replace onClick={() => { setGoogleError(false); setServerError(''); }}>Volver al ingreso</Link>
     </div>}
-    {passwordHelpOpen && <div className="password-help-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setPasswordHelpOpen(false); }}><div className="password-help-dialog" role="dialog" aria-modal="true" aria-labelledby="password-help-title"><button className="password-help-close" type="button" aria-label="Cerrar ayuda para crear contraseña" onClick={() => setPasswordHelpOpen(false)}>×</button><h2 id="password-help-title">Crea una contraseña segura</h2><p>Usa una combinación que puedas recordar, pero que otras personas no puedan adivinar.</p><ul><li>Debe tener al menos 6 caracteres.</li><li>Combina letras, números y símbolos.</li><li>No uses tu nombre, correo o una contraseña repetida.</li><li>No compartas tu contraseña con otras personas.</li></ul><button className="button primary password-help-action" type="button" onClick={() => setPasswordHelpOpen(false)}>Entendido</button></div></div>}
+    {passwordHelpOpen && <div className="password-help-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setPasswordHelpOpen(false); }}><div className="password-help-dialog" role="dialog" aria-modal="true" aria-labelledby="password-help-title"><button ref={passwordHelpCloseRef} className="password-help-close" type="button" aria-label="Cerrar ayuda para crear contraseña" onClick={() => setPasswordHelpOpen(false)}>×</button><h2 id="password-help-title">Crea una contraseña segura</h2><p>Usa una combinación que puedas recordar, pero que otras personas no puedan adivinar.</p><ul><li>Debe tener al menos 6 caracteres.</li><li>Combina letras, números y símbolos.</li><li>No uses tu nombre, correo o una contraseña repetida.</li><li>No compartas tu contraseña con otras personas.</li></ul><button className="button primary password-help-action" type="button" onClick={() => setPasswordHelpOpen(false)}>Entendido</button></div></div>}
   </AuthFrame>;
 }
 export function LoginPage() { return <AuthPage />; }
