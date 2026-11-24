@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useOptionalAuth } from '../auth/AuthContext';
+import { JoinRoomForm } from '../components/JoinRoomForm';
 import { useRoomOperation } from './roomCreationState';
-import { CopyRoomId, RoomCreation, roomError } from './RoomCreation';
+import { CopyRoomId, RoomCreation } from './RoomCreation';
 import { PageTitle } from '../components/PageTitle';
 import { api, type Room } from '../services/api';
+import { roomError } from '../utils/roomError';
 
 type RoomPreview = Room & { accent: string };
 
@@ -51,12 +53,75 @@ function EmptyRoomsState({ onCreate }: { onCreate: () => void }) {
   </article>;
 }
 
-function RoomManagementDialog({ dialog, onClose, onSave, onDelete, onJoin }: {
-  dialog: Exclude<RoomDialogState, null | { kind: 'create' }>;
+function JoinRoomDialog({ onClose, onJoined }: { onClose: () => void; onJoined: (room: Room) => void }) {
+  const modal = useRef<HTMLDialogElement>(null);
+  const busyRef = useRef(false);
+  const [invalid, setInvalid] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useLayoutEffect(() => {
+    const element = modal.current;
+    if (element && !element.open) {
+      if (typeof element.showModal === 'function') element.showModal();
+      else element.open = true;
+    }
+  }, []);
+
+  function close() {
+    if (typeof modal.current?.close === 'function') modal.current.close();
+    onClose();
+  }
+
+  function handleBusyChange(nextBusy: boolean) {
+    busyRef.current = nextBusy;
+    setBusy(nextBusy);
+  }
+
+  function cancel(event: FormEvent<HTMLDialogElement>) {
+    event.preventDefault();
+    if (!busyRef.current) close();
+  }
+
+  return (
+    <dialog
+      ref={modal}
+      onCancel={cancel}
+      className={`room-management-dialog room-operation-dialog room-management-dialog-join${invalid ? ' room-management-dialog-join-error' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="manage-room-title"
+      aria-describedby="manage-room-description"
+      aria-busy={busy}
+    >
+      <h2 id="manage-room-title">Unirse a sala</h2>
+      <p className="room-management-dialog-description" id="manage-room-description">
+        Ingresa únicamente el ID de la sala que te compartieron.
+      </p>
+      <JoinRoomForm
+        inputId="manage-room-input"
+        errorId="manage-room-error"
+        autoFocus
+        onInvalidChange={setInvalid}
+        onBusyChange={handleBusyChange}
+        cancelAction={
+          <button className="button secondary" type="button" disabled={busy} onClick={close}>
+            Cancelar
+          </button>
+        }
+        onJoined={room => {
+          if (typeof modal.current?.close === 'function') modal.current.close();
+          onJoined(room);
+        }}
+      />
+    </dialog>
+  );
+}
+
+function RoomManagementDialog({ dialog, onClose, onSave, onDelete }: {
+  dialog: Extract<RoomDialogState, { kind: 'edit' | 'delete' }>;
   onClose: () => void;
   onSave: (name: string) => Promise<void>;
   onDelete: () => Promise<void>;
-  onJoin: (id: string) => Promise<void>;
 }) {
   const modal = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -66,12 +131,10 @@ function RoomManagementDialog({ dialog, onClose, onSave, onDelete, onJoin }: {
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const loadingLabel = {
-    join: ['Uniéndote a la sala…', 'Comprobando el ID de la sala.'],
     edit: ['Guardando cambios…', 'Actualizando el nombre de la sala.'],
     delete: ['Eliminando sala…', 'Retirando la sala del listado.'],
   }[dialog.kind];
   const errorHeading = {
-    join: 'No pudimos unirte',
     edit: 'No pudimos guardar los cambios',
     delete: 'No pudimos eliminar la sala',
   }[dialog.kind];
@@ -117,35 +180,33 @@ function RoomManagementDialog({ dialog, onClose, onSave, onDelete, onJoin }: {
     (dialog.kind === 'delete' ? cancelButtonRef.current : input.current)?.focus();
   }, [dialog]);
 
-  if (dialog.kind !== 'delete') {
-    const joining = dialog.kind === 'join';
+  if (dialog.kind === 'edit') {
     return <dialog ref={modal} onCancel={cancel}
-      className={`room-management-dialog room-operation-dialog room-management-dialog-${dialog.kind}${invalid ? ` room-management-dialog-${dialog.kind}-error` : ''}`} role="dialog" aria-modal="true" aria-labelledby="manage-room-title" aria-describedby="manage-room-description" aria-busy={busy}>
-        <h2 id="manage-room-title">{joining ? 'Unirse a sala' : 'Editar sala'}</h2>
+      className={`room-management-dialog room-operation-dialog room-management-dialog-edit${invalid ? ' room-management-dialog-edit-error' : ''}`} role="dialog" aria-modal="true" aria-labelledby="manage-room-title" aria-describedby="manage-room-description" aria-busy={busy}>
+        <h2 id="manage-room-title">Editar sala</h2>
         <p className="room-management-dialog-description" id="manage-room-description">
-          {joining ? 'Ingresa únicamente el ID de la sala que te compartieron.' : 'Actualiza el nombre de tu sala. Los cambios se aplicarán a todos sus participantes.'}
+          Actualiza el nombre de tu sala. Los cambios se aplicarán a todos sus participantes.
         </p>
         <form noValidate onSubmit={event => {
           event.preventDefault();
           const value = input.current?.value.trim() ?? '';
           if (!value) { setInvalid(true); input.current?.focus(); return; }
-          void submit(() => joining ? onJoin(value) : onSave(value));
+          void submit(() => onSave(value));
         }}>
           <div className="form-field">
-            <label htmlFor="manage-room-input">{joining ? 'ID de la sala' : 'Nombre de la sala'}</label>
-            <input id="manage-room-input" ref={input} defaultValue={joining ? '' : dialog.room.name}
-              placeholder={joining ? 'Ej. CALC-8F2K' : undefined} disabled={busy} aria-invalid={invalid} aria-describedby={invalid ? 'manage-room-error' : undefined}
+            <label htmlFor="manage-room-input">Nombre de la sala</label>
+            <input id="manage-room-input" ref={input} defaultValue={dialog.room.name}
+              disabled={busy} aria-invalid={invalid} aria-describedby={invalid ? 'manage-room-error' : undefined}
               onChange={() => { setInvalid(false); setFeedback(''); }} />
           </div>
           {invalid && <p id="manage-room-error" className="room-management-dialog-field-error" role="alert">
-            {joining ? 'Ingresa el código de la Sala para continuar' : 'Revisa el nombre de la Sala antes de guardar.'}
+            Revisa el nombre de la Sala antes de guardar.
           </p>}
-          {!joining && <><div className="form-field room-management-dialog-id-field"><label htmlFor="edit-room-id">ID de la sala</label><input className="room-management-dialog-readonly" id="edit-room-id" value={`${dialog.room.id}  ·  No editable`} readOnly aria-readonly="true" /></div><p className="room-management-dialog-helper">El ID se mantiene igual aunque cambies el nombre.</p></>}
-          {joining && <p className="room-management-dialog-helper room-management-dialog-join-helper">No necesitas correo, nombre ni contraseña para unirte desde aquí.</p>}
+          <div className="form-field room-management-dialog-id-field"><label htmlFor="edit-room-id">ID de la sala</label><input className="room-management-dialog-readonly" id="edit-room-id" value={`${dialog.room.id}  ·  No editable`} readOnly aria-readonly="true" /></div><p className="room-management-dialog-helper">El ID se mantiene igual aunque cambies el nombre.</p>
           {notice}
           <div className="room-management-dialog-actions">
             <button className="button secondary" type="button" disabled={busy} onClick={close}>Cancelar</button>
-            <button className="button primary" type="submit" disabled={busy}>{joining ? 'Unirse a la sala' : 'Guardar cambios'}</button>
+            <button className="button primary" type="submit" disabled={busy}>Guardar cambios</button>
           </div>
         </form>
     </dialog>;
@@ -286,11 +347,10 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
     }
   }, [creation, shared]);
   const navigate = useNavigate();
-  async function handleJoinRoom(id: string) {
-    await api.joinRoom(id);
+  function handleJoinRoom(room: Room) {
     if (!active.current) return;
     setManagementDialog(null);
-    navigate(`/salas/${encodeURIComponent(id)}`);
+    navigate(`/salas/${encodeURIComponent(room.id)}`);
   }
 
   async function handleDeleteRoom() {
@@ -321,9 +381,10 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
     </section>
     <p className="private-note"><img src="/assets/figma/status-dot.svg" alt="" /> Comparte el ID solo con las personas invitadas.</p>
     {managementDialog?.kind === 'create' && <RoomCreation dialog onClose={() => setManagementDialog(null)} onCreated={handleCreateRoom} onReviewed={rooms => { sequence.current++; acceptRooms(rooms); setPartial(false); }} />}
-    {managementDialog && managementDialog.kind !== 'create' && <RoomManagementDialog dialog={managementDialog} onClose={() => {
-      if (managementDialog.kind === 'join') joinTrigger.current?.focus();
+    {managementDialog?.kind === 'join' && <JoinRoomDialog onClose={() => {
+      joinTrigger.current?.focus();
       setManagementDialog(null);
-    }} onSave={handleSaveRoom} onDelete={handleDeleteRoom} onJoin={handleJoinRoom} />}
+    }} onJoined={handleJoinRoom} />}
+    {managementDialog && (managementDialog.kind === 'edit' || managementDialog.kind === 'delete') && <RoomManagementDialog dialog={managementDialog} onClose={() => setManagementDialog(null)} onSave={handleSaveRoom} onDelete={handleDeleteRoom} />}
   </section>;
 }

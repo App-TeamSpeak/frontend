@@ -3,28 +3,11 @@ import { Link, useBlocker } from 'react-router-dom';
 import { useOptionalAuth } from '../auth/AuthContext';
 import { firebaseAuth } from '../firebase';
 import { api, ApiError, type Room } from '../services/api';
+import { roomError } from '../utils/roomError';
 import {
   createRoomOperation, RoomOperationContext, useRoomOperation, withRoomDeadline,
   RoomRequestTimeout, ROOM_CREATION_TIMEOUT_MS, ROOM_REVIEW_TIMEOUT_MS,
 } from './roomCreationState';
-
-export function roomError(error: unknown, fallback: string) {
-  switch (error instanceof ApiError ? error.code : '') {
-    case 'AUTH_REQUIRED':
-    case 'AUTH_INVALID': return 'Tu sesión expiró. Vuelve a iniciar sesión.';
-    case 'EMAIL_NOT_VERIFIED': return 'Verifica tu correo para continuar.';
-    case 'PROFILE_INCOMPLETE': return 'Completa tu perfil para continuar.';
-    case 'PROFILE_INCONSISTENT': return 'Tu perfil requiere revisión.';
-    case 'ACCOUNT_DELETION_PENDING':
-    case 'ACCOUNT_DELETION_BLOCKED':
-    case 'ACCOUNT_DELETED': return 'Tu cuenta no tiene acceso a las salas.';
-    case 'ROOM_NOT_FOUND': return 'La sala no existe.';
-    case 'ROOM_ACCESS_DENIED': return 'No tienes acceso a esta sala.';
-    case 'AUTH_UNAVAILABLE':
-    case 'FIRESTORE_UNAVAILABLE': return 'El servicio no está disponible. Inténtalo de nuevo.';
-    default: return fallback;
-  }
-}
 
 export function CopyRoomId({ id }: { id: string }) {
   const [feedback, setFeedback] = useState('');

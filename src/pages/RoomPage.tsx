@@ -1,4 +1,4 @@
-import { roomError } from './RoomCreation';
+import { roomError } from '../utils/roomError';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { Link, useParams } from 'react-router-dom';
