@@ -28,12 +28,24 @@ describe('AuthPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar contraseña' }));
     expect(screen.getByLabelText('Contraseña')).toHaveAttribute('type', 'text');
   });
-  it('muestra la ayuda de contraseña en registro', () => {
+  it('muestra la ayuda de contraseña en registro y gestiona el foco al abrir y cerrar', () => {
     renderAuth(true);
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué contraseña usar?' }));
-    expect(screen.getByRole('dialog', { name: 'Crea una contraseña segura' })).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: '¿Qué contraseña usar?' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Crea una contraseña segura' });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Crea una contraseña segura' }).contains(document.activeElement)).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('submits login, updates auth context and navigates to dashboard', async () => {

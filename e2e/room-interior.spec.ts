@@ -476,7 +476,8 @@ test('US-10 chat en tiempo real: auto-scroll, mensajes nuevos al leer historial,
   await expect.poll(() => list.evaluate(el => Math.abs(el.scrollHeight - (el.scrollTop + el.clientHeight)) <= 24)).toBe(true);
   await expect(page.getByRole('button', { name: /Mensajes nuevos/ })).toHaveCount(0);
 
-  // 3. Lectura de mensajes anteriores: no fuerza desplazamiento y muestra "Mensajes nuevos"
+  // 3. Lectura de mensajes anteriores: no fuerza desplazamiento y muestra "Mensajes nuevos" superpuesto sin mover ni encoger el historial
+  const listBoxBeforeUnread = await list.boundingBox();
   await list.evaluate(el => {
     el.scrollTop = 0;
     el.dispatchEvent(new Event('scroll'));
@@ -493,6 +494,9 @@ test('US-10 chat en tiempo real: auto-scroll, mensajes nuevos al leer historial,
   });
   const newMessagesBtn = page.getByRole('button', { name: 'Mensajes nuevos (1) · Ir al final' });
   await expect(newMessagesBtn).toBeVisible();
+  const listBoxAfterUnread = await list.boundingBox();
+  expect(listBoxAfterUnread?.y).toBe(listBoxBeforeUnread?.y);
+  expect(listBoxAfterUnread?.height).toBe(listBoxBeforeUnread?.height);
   expect(await list.evaluate(el => el.scrollTop)).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
 
