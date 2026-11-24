@@ -47,8 +47,11 @@ describe('API client contract', () => {
     expect(JSON.parse(options.body)).toEqual({ name: 'Sala' });
 
     fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ success: true, data: [{ messageId: 'm1', senderId: 'u2', roomId: 'room-1', text: 'Hola', createdAt: '2026-01-01' }] }) });
-    await expect(api.listMessages('room/1')).resolves.toEqual([{ id: 'm1', messageId: 'm1', authorId: 'u2', senderId: 'u2', roomId: 'room-1', text: 'Hola', createdAt: '2026-01-01' }]);
-    expect(fetch.mock.calls[1][0]).toContain('/api/rooms/room%2F1/messages');
+    await expect(api.listMessages('room/1')).resolves.toEqual({
+      messages: [{ id: 'm1', messageId: 'm1', authorId: 'u2', senderId: 'u2', roomId: 'room-1', text: 'Hola', createdAt: '2026-01-01' }],
+      nextCursor: null,
+    });
+    expect(fetch.mock.calls[1][0]).toBe('http://localhost:10000/api/rooms/room%2F1/messages');
   });
 
   it('does not confirm room creation with a non-201 or an absent ID', async () => {
@@ -199,5 +202,50 @@ describe('API client contract', () => {
     auth.currentUser = null as any;
     await expect(api.listRooms()).rejects.toMatchObject({ code: 'AUTH_REQUIRED', status: 401 });
     auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('token') };
+  });
+
+  it('soporta paginación por cursor, limit, signal y autores eliminados en listMessages', async () => {
+    const controller = new AbortController();
+    const fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: [
+          { messageId: 'm0', senderId: null, authorDeleted: true, authorName: null, roomId: 'room-1', text: 'Antiguo', createdAt: '2026-01-01T00:00:00Z' },
+          { messageId: 'm1', senderId: 'u2', authorName: 'Ana Martínez', roomId: 'room-1', text: 'Reciente', createdAt: '2026-01-01T00:01:00Z' },
+        ],
+        pagination: { nextCursor: 'cursor-1' },
+      }),
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(api.listMessages('room-1', { limit: 25, cursor: 'prev-cursor', signal: controller.signal })).resolves.toEqual({
+      messages: [
+        { id: 'm0', messageId: 'm0', authorId: null, senderId: null, authorDeleted: true, authorName: null, roomId: 'room-1', text: 'Antiguo', createdAt: '2026-01-01T00:00:00Z' },
+        { id: 'm1', messageId: 'm1', authorId: 'u2', senderId: 'u2', authorName: 'Ana Martínez', roomId: 'room-1', text: 'Reciente', createdAt: '2026-01-01T00:01:00Z' },
+      ],
+      nextCursor: 'cursor-1',
+    });
+
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toBe('http://localhost:10000/api/rooms/room-1/messages?limit=25&cursor=prev-cursor');
+    controller.abort();
+    expect(init.signal.aborted).toBe(true);
+  });
+
+  it.each([
+    { success: true, data: {} },
+    { success: true, data: [null] },
+    { success: true, data: ['bad'] },
+    { success: true, data: [{ senderId: 'u1' }] },
+    { success: true, data: [{ messageId: 'm1', senderId: 'u1', authorName: 123, text: 'Hola', createdAt: '2026-01-01T00:00:00Z' }] },
+    { success: true, data: [], pagination: 'invalid' },
+    { success: true, data: [], pagination: { nextCursor: 123 } },
+    { success: true, data: [], pagination: { nextCursor: '' } },
+    { success: true, data: [], pagination: { nextCursor: '   ' } },
+  ])('rechaza payloads malformados de listMessages %j', async body => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body }));
+    await expect(api.listMessages('room-1')).rejects.toMatchObject({ code: 'INVALID_RESPONSE', status: 502 });
   });
 });

@@ -305,4 +305,379 @@ describe('RoomPage', () => {
     expect(mocks.socket.emit).toHaveBeenCalledWith('room:leave', { roomId: 'room-1' });
     expect(mocks.socket.disconnect).toHaveBeenCalled();
   });
+
+  it('muestra estado de carga inicial del historial y estado vacío sin mensajes previos', async () => {
+    let resolveHistory!: (value: { messages: unknown[]; nextCursor: string | null }) => void;
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages.mockReturnValueOnce(new Promise(resolve => { resolveHistory = resolve; }));
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    expect(await screen.findByText('Cargando mensajes anteriores…')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Ver más antiguos' })).not.toBeInTheDocument();
+
+    await act(async () => resolveHistory({ messages: [], nextCursor: null }));
+    expect(screen.getByText('Sin mensajes anteriores. Esta sala aún no tiene conversación.')).toBeVisible();
+    expect(document.querySelectorAll('.room-chat-message')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Ver más antiguos' })).not.toBeInTheDocument();
+  });
+
+  it('pagina mensajes antiguos con Ver más antiguos, evita envíos duplicados y conserva la posición de scroll', async () => {
+    let resolveOlder!: (value: { messages: unknown[]; nextCursor: string | null }) => void;
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages
+      .mockResolvedValueOnce({
+        messages: [
+          { id: 'm3', roomId: 'room-1', authorId: 'u2', text: 'Tercer mensaje', createdAt: '2026-01-01T12:03:00Z' },
+          { id: 'm4', roomId: 'room-1', authorId: 'u1', text: 'Cuarto mensaje', createdAt: '2026-01-01T12:04:00Z' },
+        ],
+        nextCursor: 'cursor-1',
+      })
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOlder = resolve; }));
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    const loadMore = await screen.findByRole('button', { name: 'Ver más antiguos' });
+    const list = document.querySelector('.room-chat-messages') as HTMLElement;
+    Object.defineProperty(list, 'scrollHeight', {
+      configurable: true,
+      get: () => list.querySelectorAll('.room-chat-message').length * 110 + (list.querySelector('.room-chat-load-more') ? 52 : 0),
+    });
+    list.scrollTop = 40;
+
+    fireEvent.click(loadMore);
+    fireEvent.click(loadMore);
+
+    expect(mocks.listMessages).toHaveBeenCalledTimes(2);
+    expect(mocks.listMessages).toHaveBeenNthCalledWith(1, 'room-1', { signal: expect.any(AbortSignal) });
+    expect(mocks.listMessages).toHaveBeenNthCalledWith(2, 'room-1', { cursor: 'cursor-1', signal: expect.any(AbortSignal) });
+    expect(loadMore).toBeDisabled();
+
+    await act(async () =>
+      resolveOlder({
+        messages: [
+          { id: 'm1', roomId: 'room-1', authorId: null, authorDeleted: true, text: 'Primer mensaje', createdAt: '2026-01-01T12:01:00Z' },
+          { id: 'm2', roomId: 'room-1', authorId: 'u2', text: 'Segundo mensaje', createdAt: '2026-01-01T12:02:00Z' },
+          { id: 'm3', roomId: 'room-1', authorId: 'u2', text: 'Tercer mensaje', createdAt: '2026-01-01T12:03:00Z' },
+        ],
+        nextCursor: null,
+      }),
+    );
+
+    expect(screen.queryByRole('button', { name: /Ver más antiguos|Cargando mensajes anteriores/ })).not.toBeInTheDocument();
+    const renderedTexts = Array.from(document.querySelectorAll('.room-chat-message p')).map(el => el.textContent);
+    expect(renderedTexts).toEqual(['Primer mensaje', 'Segundo mensaje', 'Tercer mensaje', 'Cuarto mensaje']);
+    expect(screen.getByText('Usuario eliminado')).toBeVisible();
+    // 2 older messages added (+220) and top button removed (-52) => 40 + 168 = 208
+    expect(list.scrollTop).toBe(208);
+  });
+
+  it('permite reintentar el historial tras error inicial y tras error al paginar sin perder mensajes visibles', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce({
+        messages: [
+          { id: 'm2', roomId: 'room-1', authorId: 'u2', text: 'Reciente', createdAt: '2026-01-01T12:02:00Z' },
+        ],
+        nextCursor: 'cursor-1',
+      })
+      .mockRejectedValueOnce(new Error('503'))
+      .mockResolvedValueOnce({
+        messages: [
+          { id: 'm1', roomId: 'room-1', authorId: 'u2', text: 'Antiguo recuperado', createdAt: '2026-01-01T12:01:00Z' },
+        ],
+        nextCursor: null,
+      });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    expect(await screen.findByText('No pudimos cargar el historial de mensajes.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+    expect(await screen.findByText('Reciente')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver más antiguos' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos cargar los mensajes anteriores.');
+    expect(screen.getByText('Reciente')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('Antiguo recuperado')).toBeVisible();
+    expect(mocks.listMessages).toHaveBeenLastCalledWith('room-1', { cursor: 'cursor-1', signal: expect.any(AbortSignal) });
+    expect(screen.queryByRole('button', { name: 'Ver más antiguos' })).not.toBeInTheDocument();
+  });
+
+  it('ignora respuestas obsoletas de historial al cambiar de sala', async () => {
+    let resolveRoom1History!: (value: { messages: unknown[]; nextCursor: string | null }) => void;
+    const router = createMemoryRouter([{ path: '/salas/:id', element: <RoomPage /> }], {
+      initialEntries: ['/salas/room-1'],
+    });
+    mocks.getRoom.mockImplementation(async (id: string) => ({ id, name: id, ownerId: 'u1' }));
+    mocks.listMessages
+      .mockImplementationOnce(() => new Promise(resolve => { resolveRoom1History = resolve; }))
+      .mockResolvedValueOnce({
+        messages: [
+          { id: 'm-room-2', roomId: 'room-2', authorId: 'u2', text: 'Mensaje sala 2', createdAt: '2026-01-01T12:05:00Z' },
+        ],
+        nextCursor: null,
+      });
+    mocks.io.mockReturnValue(mocks.socket);
+    render(<RouterProvider router={router} />);
+
+    await waitFor(() => expect(mocks.listMessages).toHaveBeenCalledTimes(1));
+    await act(async () => { await router.navigate('/salas/room-2'); });
+    expect(await screen.findByText('Mensaje sala 2')).toBeVisible();
+
+    await act(async () =>
+      resolveRoom1History({
+        messages: [
+          { id: 'm-room-1', roomId: 'room-1', authorId: 'u2', text: 'Mensaje viejo sala 1', createdAt: '2026-01-01T12:00:00Z' },
+        ],
+        nextCursor: 'cursor-obsoleto',
+      }),
+    );
+
+    expect(screen.queryByText('Mensaje viejo sala 1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver más antiguos' })).not.toBeInTheDocument();
+  });
+
+  it('conserva orden cronológico al reintentar historial intercalado con mensajes en vivo y muestra estado de carga', async () => {
+    let resolveRetry!: (v: { messages: unknown[]; nextCursor: string | null }) => void;
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages
+      .mockRejectedValueOnce(new Error('503'))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveRetry = resolve; }));
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalled());
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    act(() => {
+      listeners['connect']();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1', 'u2'] });
+      mocks.socket.emit.mock.calls.filter(([e]) => e === 'room:join').at(-1)?.[2]?.({ ok: true });
+    });
+
+    const retry = await screen.findByRole('button', { name: 'Reintentar' });
+    act(() => {
+      listeners['chat:message']({ messageId: 'm2', authorId: 'u2', text: 'Segundo (12:02)', createdAt: '2026-01-01T12:02:00Z' });
+      listeners['chat:message']({ messageId: 'm4', authorId: 'u2', text: 'Cuarto (12:04)', createdAt: '2026-01-01T12:04:00Z' });
+    });
+
+    retry.focus();
+    fireEvent.click(retry);
+    expect(screen.getByText('Cargando mensajes anteriores…')).toBeVisible();
+    expect(document.activeElement?.tagName).not.toBe('BODY');
+
+    await act(async () =>
+      resolveRetry({
+        messages: [
+          { id: 'm1', roomId: 'room-1', authorId: 'u2', text: 'Primero (12:01)', createdAt: '2026-01-01T12:01:00Z' },
+          { id: 'm2', roomId: 'room-1', authorId: 'u2', text: 'Segundo (12:02)', createdAt: '2026-01-01T12:02:00Z' },
+          { id: 'm3', roomId: 'room-1', authorId: 'u2', text: 'Tercero (12:03)', createdAt: '2026-01-01T12:03:00Z' },
+          { id: 'm4', roomId: 'room-1', authorId: 'u2', text: 'Cuarto (12:04)', createdAt: '2026-01-01T12:04:00Z' },
+        ],
+        nextCursor: null,
+      }),
+    );
+
+    const rendered = Array.from(document.querySelectorAll('.room-chat-message p')).map(el => el.textContent);
+    expect(rendered).toEqual(['Primero (12:01)', 'Segundo (12:02)', 'Tercero (12:03)', 'Cuarto (12:04)']);
+    expect(document.activeElement?.tagName).not.toBe('BODY');
+  });
+
+  it('mantiene scroll ante mensajes en vivo o desplazamiento en vuelo, ajusta al llegar al inicio y preserva foco', async () => {
+    let resolveOlder1!: (v: { messages: unknown[]; nextCursor: string | null }) => void;
+    let resolveOlder2!: (v: { messages: unknown[]; nextCursor: string | null }) => void;
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages
+      .mockResolvedValueOnce({
+        messages: [{ id: 'm3', roomId: 'room-1', authorId: 'u2', text: 'M3', createdAt: '2026-01-01T12:03:00Z' }],
+        nextCursor: 'c1',
+      })
+      .mockImplementationOnce(() => new Promise(r => { resolveOlder1 = r; }))
+      .mockImplementationOnce(() => new Promise(r => { resolveOlder2 = r; }));
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    const loadMore = await screen.findByRole('button', { name: 'Ver más antiguos' });
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalled());
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    act(() => {
+      listeners['connect']();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1'] });
+      mocks.socket.emit.mock.calls.filter(([e]) => e === 'room:join').at(-1)?.[2]?.({ ok: true });
+    });
+
+    const list = document.querySelector('.room-chat-messages') as HTMLElement;
+    Object.defineProperty(list, 'scrollHeight', {
+      configurable: true,
+      get: () => list.querySelectorAll('.room-chat-message').length * 110 + (list.querySelector('.room-chat-load-more') ? 52 : 0),
+    });
+    list.scrollTop = 40;
+
+    fireEvent.click(loadMore);
+    act(() => listeners['chat:message']({ messageId: 'm4', authorId: 'u2', text: 'Live', createdAt: '2026-01-01T12:04:00Z' }));
+    list.scrollTop = 180;
+
+    await act(async () =>
+      resolveOlder1({
+        messages: [{ id: 'm1', roomId: 'room-1', authorId: 'u2', text: 'Old', createdAt: '2026-01-01T12:01:00Z' }],
+        nextCursor: 'c2',
+      }),
+    );
+    // 1 older message prepended (+110), ignoring live message height already committed before resolve
+    expect(list.scrollTop).toBe(290);
+
+    const loadMore2 = screen.getByRole('button', { name: 'Ver más antiguos' });
+    loadMore2.focus();
+    list.scrollTop = 60;
+    fireEvent.click(loadMore2);
+
+    await act(async () => resolveOlder2({ messages: [], nextCursor: null }));
+    // Empty final page removes top button (-52) => 60 - 52 = 8
+    expect(list.scrollTop).toBe(8);
+    expect(document.activeElement?.tagName).not.toBe('BODY');
+  });
+
+  it('mantiene un color de avatar consistente por remitente en historial, paginación y tiempo real', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages
+      .mockResolvedValueOnce({
+        messages: [
+          { id: 'm2', roomId: 'room-1', authorId: 'u2', text: 'Segundo', createdAt: '2026-01-01T12:02:00Z' },
+          { id: 'm3', roomId: 'room-1', authorId: 'u2', text: 'Tercero', createdAt: '2026-01-01T12:03:00Z' },
+          { id: 'm4', roomId: 'room-1', authorId: 'u1', text: 'Mío', createdAt: '2026-01-01T12:04:00Z' },
+        ],
+        nextCursor: 'cursor-1',
+      })
+      .mockResolvedValueOnce({
+        messages: [
+          { id: 'm1', roomId: 'room-1', authorId: 'u2', text: 'Primero', createdAt: '2026-01-01T12:01:00Z' },
+        ],
+        nextCursor: null,
+      });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    const loadMore = await screen.findByRole('button', { name: 'Ver más antiguos' });
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalled());
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    act(() => {
+      listeners['connect']();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1', 'u2'] });
+      mocks.socket.emit.mock.calls.filter(([e]) => e === 'room:join').at(-1)?.[2]?.({ ok: true });
+    });
+
+    act(() => {
+      listeners['chat:message']({ messageId: 'm5', authorId: 'u2', text: 'En vivo', createdAt: '2026-01-01T12:05:00Z' });
+    });
+
+    fireEvent.click(loadMore);
+    await screen.findByText('Primero');
+
+    const avatarsByText = (text: string) => {
+      const article = screen.getByText(text).closest('.room-chat-message');
+      const avatar = article?.querySelector('.room-chat-avatar');
+      return Array.from(avatar?.classList ?? []).find(name => name.startsWith('room-sidebar-avatar-'));
+    };
+
+    const u2Tones = [
+      avatarsByText('Primero'),
+      avatarsByText('Segundo'),
+      avatarsByText('Tercero'),
+      avatarsByText('En vivo'),
+    ];
+    expect(u2Tones[0]).toMatch(/^room-sidebar-avatar-[123]$/);
+    expect(new Set(u2Tones).size).toBe(1);
+    expect(avatarsByText('Mío')).toBe('room-sidebar-avatar-0');
+  });
+
+  it('muestra nombre y apellido en historial, paginación y tiempo real conservando Tú y Usuario eliminado', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages
+      .mockResolvedValueOnce({
+        messages: [
+          { id: 'm2', roomId: 'room-1', authorId: 'u2', authorName: 'Ana Martínez', text: 'Mensaje inicial', createdAt: '2026-01-01T12:02:00Z' },
+          { id: 'm3', roomId: 'room-1', authorId: 'u1', authorName: 'Mateo López', text: 'Mensaje propio', createdAt: '2026-01-01T12:03:00Z' },
+          { id: 'm4', roomId: 'room-1', authorId: null, authorDeleted: true, authorName: null, text: 'Mensaje anónimo', createdAt: '2026-01-01T12:04:00Z' },
+        ],
+        nextCursor: 'cursor-1',
+      })
+      .mockResolvedValueOnce({
+        messages: [
+          { id: 'm1', roomId: 'room-1', authorId: 'u2', authorName: 'Ana Martínez', text: 'Mensaje antiguo', createdAt: '2026-01-01T12:01:00Z' },
+        ],
+        nextCursor: null,
+      });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    const loadMore = await screen.findByRole('button', { name: 'Ver más antiguos' });
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalled());
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    act(() => {
+      listeners['connect']();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1', 'u2'] });
+      mocks.socket.emit.mock.calls.filter(([e]) => e === 'room:join').at(-1)?.[2]?.({ ok: true });
+    });
+
+    act(() => {
+      listeners['chat:message']({ messageId: 'm5', authorId: 'u2', authorName: 'Ana Martínez', text: 'Mensaje en vivo', createdAt: '2026-01-01T12:05:00Z' });
+    });
+
+    fireEvent.click(loadMore);
+    await screen.findByText('Mensaje antiguo');
+
+    const senderFor = (text: string) => {
+      const article = screen.getByText(text).closest('.room-chat-message');
+      return {
+        sender: article?.querySelector('.room-chat-message-meta strong')?.textContent,
+        initials: article?.querySelector('.room-chat-avatar')?.textContent,
+      };
+    };
+
+    expect(senderFor('Mensaje antiguo')).toEqual({ sender: 'Ana Martínez', initials: 'AM' });
+    expect(senderFor('Mensaje inicial')).toEqual({ sender: 'Ana Martínez', initials: 'AM' });
+    expect(senderFor('Mensaje en vivo')).toEqual({ sender: 'Ana Martínez', initials: 'AM' });
+    expect(senderFor('Mensaje propio')).toEqual({ sender: 'Tú', initials: 'T' });
+    expect(senderFor('Mensaje anónimo')).toEqual({ sender: 'Usuario eliminado', initials: 'UE' });
+  });
+
+  it('muestra nombre y apellido en la cuadrícula de participantes al ingresar y cuando se unen nuevos participantes', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalled());
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    act(() => {
+      listeners['connect']();
+      listeners['room:joined']({
+        roomId: 'room-1',
+        participants: ['u1', 'u2'],
+        participantNames: { u1: 'Ana', u2: 'Carlos Ruiz' },
+      });
+      mocks.socket.emit.mock.calls.filter(([e]) => e === 'room:join').at(-1)?.[2]?.({ ok: true });
+    });
+
+    act(() => {
+      listeners['room:participant-joined']({ userId: 'u3', authorName: 'Luis Gómez' });
+      listeners['room:participant-joined']({ userId: 'u4abcd12', authorName: null });
+    });
+
+    const cardFor = (name: string) => {
+      const card = screen.getByText(name).closest('.participant-card');
+      return {
+        name: card?.querySelector('.participant-name')?.textContent,
+        initials: card?.querySelector('.participant-avatar')?.textContent,
+      };
+    };
+
+    expect(cardFor('Ana Martínez · Tú')).toEqual({ name: 'Ana Martínez · Tú', initials: 'AM' });
+    expect(cardFor('Carlos Ruiz')).toEqual({ name: 'Carlos Ruiz', initials: 'CR' });
+    expect(cardFor('Luis Gómez')).toEqual({ name: 'Luis Gómez', initials: 'LG' });
+    expect(cardFor('Usuario u4abcd')).toEqual({ name: 'Usuario u4abcd', initials: 'US' });
+  });
 });

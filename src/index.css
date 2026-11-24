@@ -587,7 +587,7 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .media-control-av-off:hover:not(:disabled), .media-control-exit:hover:not(:disabled), .media-control-sharing:hover:not(:disabled) { border-color: var(--error); background: var(--danger-hover); }
 .media-control-av-off:active:not(:disabled), .media-control-exit:active:not(:disabled), .media-control-sharing:active:not(:disabled) { border-color: var(--error); background: var(--danger-deep); }
 .media-control:disabled { border-style: dashed; border-color: var(--border-strong); background: var(--surface); color: var(--muted); opacity: 1; }
-.room-side-panel { display: flex; width: 468px; min-height: 680px; flex-shrink: 0; flex-direction: column; overflow: hidden; padding: 16px 23px 33px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+.room-side-panel { display: flex; width: 468px; height: clamp(680px, calc(100dvh - 140px), 760px); min-height: 680px; flex-shrink: 0; flex-direction: column; overflow: hidden; padding: 16px 23px 33px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
 .room-side-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .room-side-panel h2 { font-size: 17px; }
 .room-side-panel-close { display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: #cbd5e1; font-size: 24px; line-height: 1; }
@@ -605,7 +605,16 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .room-chat-section { display: flex; min-height: 0; flex: 1; flex-direction: column; margin-top: 20px; padding-top: 20px; border-top: 1px solid #334155; }
 .room-chat-section h2 { font-size: 17px; }
 .room-chat-description { margin-top: 8px; color: var(--muted); font-size: 12px; }
-.room-chat-messages { display: grid; gap: 16px; min-height: 0; margin-top: 28px; overflow: auto; }
+.room-chat-messages { display: grid; align-content: start; flex: 1 1 auto; gap: 16px; min-height: 0; margin-top: 28px; overflow: auto; }
+.room-chat-messages:focus { outline: none; }
+.room-chat-messages:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 8px; }
+.room-chat-load-more { justify-self: start; min-height: 36px; padding: 6px 14px; font-size: 13px; }
+.room-chat-history-status { display: grid; gap: 10px; }
+.room-chat-history-status p, .room-chat-empty { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.room-chat-skeleton { display: block; width: 100%; height: 44px; border-radius: 10px; }
+.room-chat-skeleton-short { width: 78%; }
+.room-chat-history-error { display: grid; gap: 10px; padding: 10px 14px; border: 1px solid #995360; border-radius: 10px; background: #3a202b; color: var(--error); font-size: 13px; }
+.room-chat-history-error .button { justify-self: start; min-height: 36px; padding: 6px 14px; font-size: 13px; }
 .room-chat-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: start; gap: 12px; }
 .room-chat-avatar { width: 30px; height: 30px; }
 .room-chat-message-body { min-width: 0; }
@@ -670,7 +679,7 @@ button:disabled { cursor: not-allowed; opacity: .6; }
   .room-content-screen-share-panel-open .room-screen-share-stage .shared-screen-participants { width: 228px; grid-auto-rows: 111px; padding: 26px 14px; }
   .room-content-screen-share-panel-open .room-screen-share-stage .shared-screen-thumbnail { width: 198px; min-width: 198px; min-height: 111px; }
 }
-@media (max-width: 1100px) { .room-header { flex-wrap: wrap; padding: 14px 24px; } .room-header-status { order: 3; width: 100%; margin-left: 50px; margin-right: 0; } .room-header-actions { margin-left: auto; } .room-content { flex-direction: column; } .room-side-panel { width: 100%; min-height: 480px; } }
+@media (max-width: 1100px) { .room-header { flex-wrap: wrap; padding: 14px 24px; } .room-header-status { order: 3; width: 100%; margin-left: 50px; margin-right: 0; } .room-header-actions { margin-left: auto; } .room-content { flex-direction: column; } .room-side-panel { width: 100%; height: min(480px, 65dvh); min-height: 360px; } }
 @media (min-width: 768px) and (max-width: 1100px) { .video-stage, .room-screen-share-stage { min-height: 640px; flex: 0 0 auto; } .participant-card { min-height: 210px; } .media-controls { width: min(612px, calc(100% - 32px)); } .media-control { height: 48px; } }
 @media (max-width: 767px) { .room-header { gap: 12px; padding: 14px 16px; } .room-header-brand { flex: 1 1 100%; } .room-header-brand h1 { font-size: 16px; } .room-header-status { order: initial; width: auto; margin-left: 0; margin-right: 0; } .room-header-actions { flex: 1 1 auto; justify-content: flex-end; gap: 12px; } .room-panel-toggles { width: auto; padding-inline: 8px; } .room-panel-toggle { font-size: 11px; } .room-content { padding: 16px; } .video-stage { min-height: 760px; padding: 18px 16px 150px; } .video-stage-heading { align-items: flex-start; flex-direction: column; gap: 8px; margin-inline: 0; } .participant-grid { grid-template-columns: 1fr; gap: 16px; } .participant-card { min-height: 180px; } .media-controls { right: 16px; bottom: 16px; width: calc(100% - 32px); flex-wrap: wrap; transform: none; } .media-control { flex: 1 1 46%; width: auto !important; } .room-footer-note { margin: 0 16px 20px; line-height: 18px; } }
 @media (max-width: 1100px) { .shared-screen-layout { flex-direction: column; } .shared-screen-canvas { min-height: 360px; } .shared-screen-participants { width: 100%; max-width: none; min-width: 0; } }
