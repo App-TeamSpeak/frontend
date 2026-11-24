@@ -415,3 +415,115 @@ test('interior de sala: estados del chat (vacío, historial, envío, error de hi
   await expect(page.getByText('No pudimos cargar el historial de mensajes.')).toBeVisible();
   await captureAllViewports(page, info, mobile, 'interior-error-historial');
 });
+
+test('US-10 chat en tiempo real: auto-scroll, mensajes nuevos al leer historial, vacío y recuperación tras error', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  const viewport = mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+  await page.setViewportSize(viewport);
+  await stubInteriorAuthAndSocket(page);
+
+  const longHistory = Array.from({ length: 18 }, (_, index) => ({
+    id: `hist-${index + 1}`,
+    roomId: baseRoom.roomId,
+    authorId: index % 2 === 0 ? 'carlos-01' : 'laura-02',
+    authorName: index % 2 === 0 ? 'Carlos Ruiz' : 'Laura Díaz',
+    text: `Mensaje de historial número ${index + 1} para generar desplazamiento vertical en el chat.`,
+    createdAt: new Date(Date.UTC(2026, 10, 18, 14, index)).toISOString(),
+  }));
+
+  await page.route(`**/api/rooms/${baseRoom.roomId}`, route =>
+    route.fulfill({ json: { success: true, data: baseRoom } }),
+  );
+  await page.route(`**/api/rooms/${baseRoom.roomId}/messages`, route =>
+    route.fulfill({ json: { success: true, data: longHistory, meta: { nextCursor: null } } }),
+  );
+
+  await page.goto(`/salas/${baseRoom.roomId}`);
+  await page.waitForFunction(() => typeof (window as unknown as { __roomEmitServer?: unknown }).__roomEmitServer === 'function');
+  await page.evaluate(roomId => {
+    const emit = (window as unknown as { __roomEmitServer: (e: string, p?: unknown) => void }).__roomEmitServer;
+    emit('__connect');
+    emit('room:joined', { roomId, participants: ['us06-owner', 'carlos-01', 'laura-02'] });
+    emit('__ack_join', { ok: true });
+  }, baseRoom.roomId);
+
+  await expect(page.locator('.room-chat-message')).toHaveCount(18);
+  const list = page.locator('.room-chat-messages');
+  await expect.poll(() => list.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => list.evaluate(el => Math.abs(el.scrollHeight - (el.scrollTop + el.clientHeight)) <= 24)).toBe(true);
+
+  // 1. Mensaje vacío o de solo espacios no se envía
+  const input = page.getByLabel('Mensaje para la sala');
+  const submit = page.getByRole('button', { name: 'Enviar mensaje' });
+  await expect(submit).toBeDisabled();
+  await input.fill('    ');
+  await expect(submit).toBeDisabled();
+  await input.press('Enter');
+  await expect(page.getByText('Enviando mensaje…')).toHaveCount(0);
+
+  // 2. Auto-scroll en tiempo real estando al final
+  await page.evaluate(() => {
+    const emit = (window as unknown as { __roomEmitServer: (e: string, p?: unknown) => void }).__roomEmitServer;
+    emit('chat:message', {
+      messageId: 'live-19',
+      authorId: 'carlos-01',
+      authorName: 'Carlos Ruiz',
+      text: 'Mensaje en vivo al final.',
+      createdAt: '2026-11-18T14:30:00.000Z',
+    });
+  });
+  await expect(page.getByText('Mensaje en vivo al final.')).toBeVisible();
+  await expect.poll(() => list.evaluate(el => Math.abs(el.scrollHeight - (el.scrollTop + el.clientHeight)) <= 24)).toBe(true);
+  await expect(page.getByRole('button', { name: /Mensajes nuevos/ })).toHaveCount(0);
+
+  // 3. Lectura de mensajes anteriores: no fuerza desplazamiento y muestra "Mensajes nuevos"
+  await list.evaluate(el => {
+    el.scrollTop = 0;
+    el.dispatchEvent(new Event('scroll'));
+  });
+  await page.evaluate(() => {
+    const emit = (window as unknown as { __roomEmitServer: (e: string, p?: unknown) => void }).__roomEmitServer;
+    emit('chat:message', {
+      messageId: 'live-20',
+      authorId: 'laura-02',
+      authorName: 'Laura Díaz',
+      text: 'Mensaje mientras lees historial.',
+      createdAt: '2026-11-18T14:31:00.000Z',
+    });
+  });
+  const newMessagesBtn = page.getByRole('button', { name: 'Mensajes nuevos (1) · Ir al final' });
+  await expect(newMessagesBtn).toBeVisible();
+  expect(await list.evaluate(el => el.scrollTop)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+
+  // 4. Activar "Mensajes nuevos" lleva al final y oculta el indicador
+  await newMessagesBtn.click();
+  await expect(newMessagesBtn).toHaveCount(0);
+  await expect.poll(() => list.evaluate(el => Math.abs(el.scrollHeight - (el.scrollTop + el.clientHeight)) <= 24)).toBe(true);
+
+  // 5. Recuperación tras error de envío en el siguiente intento exitoso
+  await input.fill('Reintento de mensaje');
+  await submit.click();
+  await expect(page.getByText('Enviando mensaje…')).toBeVisible();
+  await page.evaluate(() => {
+    const emit = (window as unknown as { __roomEmitServer: (e: string, p?: unknown) => void }).__roomEmitServer;
+    emit('__ack_chat', { ack: { ok: false } });
+  });
+  await expect(page.getByRole('alert')).toContainText('No pudimos enviar el mensaje.');
+  await expect(input).toHaveValue('Reintento de mensaje');
+
+  await submit.click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.evaluate(() => {
+    const emit = (window as unknown as { __roomEmitServer: (e: string, p?: unknown) => void }).__roomEmitServer;
+    emit('chat:message', {
+      messageId: 'live-21',
+      authorId: 'us06-owner',
+      text: 'Reintento de mensaje',
+      createdAt: '2026-11-18T14:32:00.000Z',
+    });
+    emit('__ack_chat', { ack: { ok: true } });
+  });
+  await expect(page.getByText('Enviando mensaje…')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
