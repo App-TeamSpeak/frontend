@@ -190,10 +190,42 @@ describe('Creación compartida', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: outcome === 'missing' ? undefined : { writeText } });
     try {
       render(<CopyRoomId id={room.id} />);
-      fireEvent.click(screen.getByRole('button', { name: 'Copiar ID' }));
+      const button = screen.getByRole('button', { name: 'Copiar ID' });
+      fireEvent.click(button);
       await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(outcome === 'success' ? 'ID copiado.' : 'No pudimos copiar'));
-      if (outcome !== 'missing') expect(writeText).toHaveBeenCalledWith(room.id);
+      if (outcome === 'success') {
+        expect(button).toHaveAttribute('data-copied', 'true');
+        expect(writeText).toHaveBeenCalledWith(room.id);
+      } else {
+        expect(button).not.toHaveAttribute('data-copied');
+        if (outcome !== 'missing') expect(writeText).toHaveBeenCalledWith(room.id);
+      }
     } finally {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
+
+  it('limpia la insignia visual de copiado después de 2.5 segundos', async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    try {
+      render(<CopyRoomId id={room.id} />);
+      const button = screen.getByRole('button', { name: 'Copiar ID' });
+      await act(async () => {
+        fireEvent.click(button);
+        await Promise.resolve();
+      });
+      expect(screen.getByRole('status')).toHaveTextContent('ID copiado.');
+      expect(button).toHaveAttribute('data-copied', 'true');
+
+      act(() => {
+        vi.advanceTimersByTime(2500);
+      });
+      expect(screen.getByRole('status')).toHaveTextContent('');
+      expect(button).not.toHaveAttribute('data-copied');
+    } finally {
+      vi.useRealTimers();
       Reflect.deleteProperty(navigator, 'clipboard');
     }
   });

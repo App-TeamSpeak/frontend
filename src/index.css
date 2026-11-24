@@ -99,8 +99,23 @@ body {
   --canvas-light-border: #e5e7eb;
   --canvas-light-text: #111827;
   --canvas-light-subtle: #6b7280;
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   background: var(--canvas);
   color: var(--text);
+}
+
+@keyframes menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 body {
@@ -407,9 +422,9 @@ button:not(:disabled),
   background: var(--primary-hover);
 }
 
-.dashboard .primary:active {
+.dashboard .primary:active:not(:disabled) {
   background: var(--primary-hover);
-  border-width: 2px;
+  box-shadow: inset 0 0 0 1px var(--link);
 }
 
 .secondary {
@@ -421,10 +436,10 @@ button:not(:disabled),
   background: var(--subtle);
 }
 
-.dashboard .secondary:active {
+.dashboard .secondary:active:not(:disabled) {
   background: var(--canvas);
   border-color: var(--link);
-  border-width: 2px;
+  box-shadow: inset 0 0 0 1px var(--link);
 }
 
 .dashboard .button:focus-visible {
@@ -992,7 +1007,7 @@ button:not(:disabled),
 .panel-shell .site-header nav a {
   min-height: 32px;
   text-decoration: none;
-  transition: color .15s ease;
+  transition: color var(--motion-fast) var(--ease-standard);
 }
 
 .dashboard-shell .site-header nav a:hover,
@@ -1033,10 +1048,6 @@ button:not(:disabled),
   object-fit: cover;
 }
 
-.profile-avatar:hover {
-  background: #c9dcff;
-}
-
 .header-logout-icon {
   position: absolute;
   top: 0;
@@ -1060,10 +1071,16 @@ button:not(:disabled),
   overflow: visible;
 }
 
-.header-logout-icon:hover {
-  border-color: var(--link);
-  color: var(--link);
-  background: var(--subtle);
+@media (hover: hover) and (pointer: fine) {
+  .profile-avatar:hover {
+    background: #c9dcff;
+  }
+
+  .header-logout-icon:hover {
+    border-color: var(--link);
+    color: var(--link);
+    background: var(--subtle);
+  }
 }
 
 .dashboard-shell .main-content,
@@ -1262,16 +1279,6 @@ button:not(:disabled),
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .skeleton-shimmer {
-    animation: none;
-  }
-
-  .skeleton-block {
-    background: #263449;
-  }
-}
-
 .room-load-error {
   display: flex;
   width: min(600px, 100%);
@@ -1414,32 +1421,32 @@ button:not(:disabled),
 }
 
 .room-card {
-  --room-card-fill: var(--surface);
   min-width: 0;
   min-height: 244px;
   overflow: visible;
   border: 1px solid var(--border-strong);
   border-radius: 20px;
-  background: linear-gradient(to bottom, var(--room-accent) 0 6px, var(--room-card-fill) 6px);
+  background-color: var(--surface);
+  background-image: linear-gradient(to bottom, var(--room-accent) 0 6px, transparent 6px);
+  transition: background-color var(--motion-base) var(--ease-standard), border-color var(--motion-base) var(--ease-standard);
 }
 
-.room-card:hover {
-  --room-card-fill: var(--surface-soft);
-  border-color: var(--link);
-  background: linear-gradient(to bottom, var(--room-accent) 0 6px, var(--room-card-fill) 6px);
+@media (hover: hover) and (pointer: fine) {
+  .room-card:hover {
+    background-color: var(--surface-soft);
+    border-color: var(--link);
+  }
 }
 
 .room-card:active {
-  --room-card-fill: var(--canvas);
+  background-color: var(--canvas);
   border-color: var(--link);
-  background: linear-gradient(to bottom, var(--room-accent) 0 6px, var(--room-card-fill) 6px);
 }
 
 .room-card:focus-within {
-  --room-card-fill: var(--surface);
+  background-color: var(--surface);
   border-color: var(--focus-ring);
   outline: 2px solid var(--focus-ring);
-  background: linear-gradient(to bottom, var(--room-accent) 0 6px, var(--room-card-fill) 6px);
 }
 
 .room-card-accent-clip {
@@ -1522,6 +1529,8 @@ button:not(:disabled),
   border-radius: 10px;
   background: var(--stage-active);
   box-shadow: 0 8px 20px -4px rgb(0 0 0 / 28%);
+  transform-origin: top right;
+  animation: menu-enter var(--motion-fast) var(--ease-standard);
 }
 
 .room-card-menu-item {
@@ -1539,6 +1548,7 @@ button:not(:disabled),
   font-size: 15px;
   font-weight: 400;
   line-height: 20px;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 
 .room-card-menu-item:hover,
@@ -1596,6 +1606,10 @@ button:not(:disabled),
   width: 8px;
   height: 8px;
   flex-shrink: 0;
+}
+
+.room-card-live-idle {
+  color: var(--muted);
 }
 
 .room-card-enter {
@@ -3195,13 +3209,6 @@ button:disabled {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .room-loading-progress span {
-    animation: none;
-    width: 100%;
-  }
-}
-
 .room-shell {
   min-height: 100vh;
   min-height: 100dvh;
@@ -3486,7 +3493,7 @@ button:disabled {
   background: #263449;
   color: var(--text);
   font: 600 12px/1 'Inter Variable', sans-serif;
-  transition: border-color .16s ease, background-color .16s ease, color .16s ease, transform .16s ease;
+  transition: border-color var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
 }
 
 .media-controls>.media-control:nth-child(1) {
@@ -3560,9 +3567,18 @@ button:disabled {
   text-decoration: none;
 }
 
-.media-control:hover:not(:disabled) {
-  border-color: var(--link-strong);
-  background: var(--border);
+@media (hover: hover) and (pointer: fine) {
+  .media-control:hover:not(:disabled) {
+    border-color: var(--link-strong);
+    background: var(--border);
+  }
+
+  .media-control-av-off:hover:not(:disabled),
+  .media-control-exit:hover:not(:disabled),
+  .media-control-sharing:hover:not(:disabled) {
+    border-color: var(--error);
+    background: var(--danger-hover);
+  }
 }
 
 .media-control:active:not(:disabled) {
@@ -3581,11 +3597,11 @@ button:disabled {
   box-shadow: 0 0 0 2px var(--focus-gap);
 }
 
-.media-control-av-off:hover:not(:disabled),
-.media-control-exit:hover:not(:disabled),
-.media-control-sharing:hover:not(:disabled) {
+.media-control-av-off:active:not(:disabled),
+.media-control-exit:active:not(:disabled),
+.media-control-sharing:active:not(:disabled) {
   border-color: var(--error);
-  background: var(--danger-hover);
+  background: var(--danger-deep);
 }
 
 .media-control-av-off:active:not(:disabled),
@@ -3998,6 +4014,8 @@ button:disabled {
   border-radius: 10px;
   background: #111827;
   box-shadow: 0 14px 32px rgb(2 6 23 / 40%);
+  transform-origin: top right;
+  animation: menu-enter var(--motion-fast) var(--ease-standard);
 }
 
 .room-view-menu button {
@@ -4012,11 +4030,16 @@ button:disabled {
   color: #f8fafc;
   text-align: left;
   font: 600 13px/1.2 'Inter Variable', sans-serif;
+  transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 
 .room-view-menu button:hover,
 .room-view-menu button:focus-visible {
   background: #334155;
+}
+
+.room-view-menu button:active {
+  background: var(--subtle);
 }
 
 .room-screen-share-stage {
@@ -5114,19 +5137,73 @@ button:disabled {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: 6px 8px;
   margin-block: 12px;
   overflow-wrap: anywhere;
   min-width: 0;
+}
+
+.room-card .room-id-actions {
+  margin-block: 0;
 }
 
 .room-id-actions [role=status]:empty {
   position: absolute;
 }
 
-.room-id-actions .button {
-  min-height: 44px;
-  padding-inline: 12px;
+.room-copy-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--subtle);
+  color: var(--muted);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .room-copy-button:hover:not(:disabled) {
+    border-color: var(--link);
+    background: var(--stage-active);
+    color: var(--link-strong);
+  }
+}
+
+.room-copy-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.room-copy-button[data-copied="true"] {
+  border-color: #286a56;
+  background: #103c30;
+  color: var(--success);
+}
+
+.room-copy-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: 'Inter Variable', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.room-copy-badge-success {
+  border: 1px solid #286a56;
+  background: #103c30;
+  color: var(--success);
+}
+
+.room-copy-badge-error {
+  border: 1px solid #995360;
+  background: #3a202b;
+  color: var(--error);
 }
 
 .room-create-dialog .form-field input:not([aria-invalid=true]),
@@ -5879,5 +5956,129 @@ button:disabled {
 
   .room-operation-dialog.room-management-dialog-join .form-field input {
     height: 51px;
+  }
+}
+
+/* Shared Stage 2 microinteraction rules (never animate outline, outline-offset, or focus box-shadow) */
+.button,
+.google-button,
+.room-load-error-retry,
+.room-empty-state-action,
+.room-management-dialog-danger,
+.room-chat-form button,
+.room-chat-new-messages,
+.shared-screen-return {
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+
+.password-toggle,
+.password-help-trigger,
+.password-help-close,
+.header-logout-icon,
+.profile-avatar,
+.room-card-menu-button,
+.room-copy-button,
+.room-side-panel-close,
+.user-profile-avatar-trigger,
+.site-header nav a,
+.help-navigation a,
+.auth-switch a,
+.auth-return,
+.forgot-link a,
+.form-field input,
+.form-field select,
+.room-chat-form input {
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.button:active:not(:disabled),
+.google-button:active:not(:disabled),
+.room-load-error-retry:active:not(:disabled),
+.room-empty-state-action:active:not(:disabled),
+.room-chat-form button:active:not(:disabled),
+.shared-screen-return:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.room-chat-new-messages:active:not(:disabled) {
+  transform: translateX(-50%) translateY(1px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+
+  .room-load-error-retry:hover:not(:disabled),
+  .room-empty-state-action:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0.01ms;
+    --motion-base: 0.01ms;
+  }
+
+  .skeleton-shimmer,
+  .room-loading-progress span,
+  .room-card-menu,
+  .room-view-menu {
+    animation: none;
+  }
+
+  .skeleton-block {
+    background: #263449;
+  }
+
+  .room-loading-progress span {
+    width: 100%;
+  }
+
+  .media-control,
+  .dashboard-shell .site-header nav a,
+  .panel-shell .site-header nav a,
+  .button,
+  .google-button,
+  .room-load-error-retry,
+  .room-empty-state-action,
+  .room-management-dialog-danger,
+  .room-chat-form button,
+  .room-chat-new-messages,
+  .shared-screen-return,
+  .password-toggle,
+  .password-help-trigger,
+  .password-help-close,
+  .header-logout-icon,
+  .profile-avatar,
+  .room-card-menu-button,
+  .room-side-panel-close,
+  .user-profile-avatar-trigger,
+  .site-header nav a,
+  .help-navigation a,
+  .auth-switch a,
+  .auth-return,
+  .forgot-link a,
+  .form-field input,
+  .form-field select,
+  .room-chat-form input,
+  .room-card,
+  .room-card-menu-item,
+  .room-copy-button,
+  .room-view-menu button {
+    transition: none;
+  }
+
+  .media-control:active:not(:disabled),
+  .button:active:not(:disabled),
+  .google-button:active:not(:disabled),
+  .room-load-error-retry:active:not(:disabled),
+  .room-empty-state-action:active:not(:disabled),
+  .room-chat-form button:active:not(:disabled),
+  .room-copy-button:active:not(:disabled),
+  .shared-screen-return:active:not(:disabled) {
+    transform: none;
+  }
+
+  .room-chat-new-messages:active:not(:disabled) {
+    transform: translateX(-50%);
   }
 }
