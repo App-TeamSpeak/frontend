@@ -17,7 +17,8 @@ async function stubRooms(page: Page, scenario: 'standard' | 'success' | 'uncerta
     const url = new URL(route.request().url());
     if (url.searchParams.has('real')) { await route.continue(); return; }
     url.searchParams.set('real', '1');
-    await route.fulfill({ contentType: 'application/javascript', body: `
+    await route.fulfill({
+      contentType: 'application/javascript', body: `
       export * from ${JSON.stringify(url.pathname + url.search)};
       export const configureAuth = async () => {};
       export const subscribeToAuth = callback => {
@@ -57,9 +58,11 @@ async function stubRooms(page: Page, scenario: 'standard' | 'success' | 'uncerta
     }`,
   }));
   await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'clipboard', { value: {
-      writeText: async (value: string) => sessionStorage.setItem('us06-copied-id', value),
-    } });
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (value: string) => sessionStorage.setItem('us06-copied-id', value),
+      }
+    });
   });
   let created = false;
   let listUnavailable = true;
@@ -162,7 +165,9 @@ test('crea una sala propia, copia el ID real y confirma el ingreso como anfitri�
   await confirmation.getByRole('button', { name: 'Ir a mis salas' }).click();
   const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: room.name }) });
   await expect(card.getByText(`ID ${room.roomId}`)).toBeVisible();
-  await expect(card.getByText('1 miembro')).toBeVisible();
+  await expect(card.getByText('1 participante')).toBeVisible();
+  await expect(card.getByText('1 persona conectada ahora')).toBeVisible();
+  await expect(card.getByText(/Última actividad/)).toBeVisible();
   const copy = card.getByRole('button', { name: 'Copiar ID' });
   await copy.focus();
   await page.keyboard.press('Enter');
@@ -309,8 +314,10 @@ test('US-06 muestra el progreso y los errores en el diálogo que inició la oper
     const code = errors[joins++];
     if (joins === 1) await heldJoin;
     if (code) {
-      await route.fulfill({ status: code === 'ROOM_NOT_FOUND' ? 404 : code === 'ROOM_ACCESS_DENIED' ? 403 : 503,
-        json: { success: false, code, message: 'Error sintético' } });
+      await route.fulfill({
+        status: code === 'ROOM_NOT_FOUND' ? 404 : code === 'ROOM_ACCESS_DENIED' ? 403 : 503,
+        json: { success: false, code, message: 'Error sintético' }
+      });
     } else {
       await route.fulfill({ json: { success: true, data: room } });
     }
@@ -323,8 +330,10 @@ test('US-06 muestra el progreso y los errores en el diálogo que inició la oper
     requests.push(method);
     if (!alreadyTried) {
       await new Promise<void>(resolve => releases.set(method, resolve));
-      await route.fulfill({ status: 503,
-        json: { success: false, code: 'FIRESTORE_UNAVAILABLE', message: 'Error sintético' } });
+      await route.fulfill({
+        status: 503,
+        json: { success: false, code: 'FIRESTORE_UNAVAILABLE', message: 'Error sintético' }
+      });
       return;
     }
     if (method === 'PATCH') expect(route.request().postDataJSON()).toEqual({ name: 'Cálculo avanzado' });

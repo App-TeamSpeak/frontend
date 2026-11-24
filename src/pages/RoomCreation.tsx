@@ -10,19 +10,51 @@ import {
 } from './roomCreationState';
 
 export function CopyRoomId({ id }: { id: string }) {
-  const [feedback, setFeedback] = useState('');
+  const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+
   async function copy() {
     try {
       await navigator.clipboard.writeText(id);
-      setFeedback('ID copiado.');
+      setFeedback({ kind: 'success', text: 'ID copiado.' });
     } catch {
-      setFeedback('No pudimos copiar el ID. Selecciónalo para copiarlo manualmente.');
+      setFeedback({ kind: 'error', text: 'No pudimos copiar el ID. Selecciónalo para copiarlo manualmente.' });
     }
   }
+
+  const copied = feedback?.kind === 'success';
   return <div className="room-id-actions">
     <span className="room-card-id">ID {id}</span>
-    <button className="button secondary" type="button" onClick={() => void copy()}>Copiar ID</button>
-    <span role="status">{feedback}</span>
+    <button
+      className="room-copy-button"
+      type="button"
+      aria-label="Copiar ID"
+      title="Copiar ID"
+      data-copied={copied ? 'true' : undefined}
+      onClick={() => void copy()}
+    >
+      {copied ? (
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+        </svg>
+      ) : (
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+          <path d="M10.5 5.5V3.75A1.25 1.25 0 0 0 9.25 2.5h-5.5A1.25 1.25 0 0 0 2.5 3.75v5.5A1.25 1.25 0 0 0 3.75 10.5H5.5" />
+        </svg>
+      )}
+    </button>
+    <span
+      role="status"
+      className={feedback ? `room-copy-badge room-copy-badge-${feedback.kind}` : undefined}
+    >
+      {feedback?.text ?? ''}
+    </span>
   </div>;
 }
 

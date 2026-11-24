@@ -243,4 +243,157 @@ describe('DashboardPage', () => {
     );
     expect(screen.queryByRole('dialog', { name: 'Unirse a sala' })).not.toBeInTheDocument();
   });
+
+  it('muestra última actividad y conectados en tiempo real alineados con Figma sin etiquetas privadas', async () => {
+    const nowMs = Date.parse('2026-11-24T20:00:00.000Z');
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(nowMs);
+    const oldActivity = '2026-11-01T15:30:00.000Z';
+    const expectedOldDate = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).format(
+      Date.parse(oldActivity),
+    );
+    try {
+      listRooms.mockResolvedValue([
+        {
+          id: 'CALC-8F2K',
+          name: 'Cálculo II · Grupo A',
+          ownerId: 'u1',
+          createdAt: '2026-11-01T15:30:00.000Z',
+          lastActivityAt: '2026-11-24T19:50:00.000Z',
+          participants: 4,
+          connected: 3,
+        },
+        {
+          id: 'FIS-1A2B',
+          name: 'Física I',
+          ownerId: 'u1',
+          createdAt: '2026-11-24T19:59:45.000Z',
+          participants: 1,
+          connected: 1,
+        },
+        {
+          id: 'QUI-9Z8Y',
+          name: 'Química',
+          ownerId: 'u1',
+          lastActivityAt: oldActivity,
+          participants: 2,
+          connected: 0,
+        },
+      ]);
+
+      render(<MemoryRouter><DashboardPage /></MemoryRouter>);
+
+      expect(await screen.findByRole('heading', { name: 'Cálculo II · Grupo A' })).toBeInTheDocument();
+      expect(screen.getByText('Última actividad hace 10 min')).toBeInTheDocument();
+      expect(screen.getByText('Última actividad hace un momento')).toBeInTheDocument();
+      expect(screen.getByText(`Última actividad · ${expectedOldDate}`)).toBeInTheDocument();
+      expect(screen.getByText('4 participantes')).toBeInTheDocument();
+      expect(screen.getByText('1 participante')).toBeInTheDocument();
+      expect(screen.getByText('3 personas conectadas ahora')).toBeInTheDocument();
+      expect(screen.getByText('1 persona conectada ahora')).toBeInTheDocument();
+      expect(screen.getByText('Sin personas conectadas ahora')).toBeInTheDocument();
+      expect(screen.queryByText(/Privada/i)).not.toBeInTheDocument();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('actualiza conectados por polling silencioso solo cuando la pestaña está visible y tolera fallos en segundo plano', async () => {
+    vi.useFakeTimers();
+    const baseRoom = {
+      id: 'CALC-8F2K',
+      name: 'Cálculo II',
+      ownerId: 'u1',
+      createdAt: '2026-11-24T19:50:00.000Z',
+      lastActivityAt: '2026-11-24T19:50:00.000Z',
+      participants: 3,
+      connected: 0,
+    };
+    listRooms
+      .mockResolvedValueOnce([baseRoom])
+      .mockResolvedValueOnce([{ ...baseRoom, connected: 2 }])
+      .mockRejectedValueOnce(new Error('transient offline'));
+
+    try {
+      render(<MemoryRouter><DashboardPage /></MemoryRouter>);
+      await act(async () => { await Promise.resolve(); });
+      expect(screen.getByText('Sin personas conectadas ahora')).toBeInTheDocument();
+      expect(listRooms).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(listRooms).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('2 personas conectadas ahora')).toBeInTheDocument();
+
+      // Background poll failure must not wipe out visible cards.
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(listRooms).toHaveBeenCalledTimes(3);
+      expect(screen.getByText('2 personas conectadas ahora')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'No pudimos cargar tus salas' })).not.toBeInTheDocument();
+
+      // Hidden tabs skip polling ticks.
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(listRooms).toHaveBeenCalledTimes(3);
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+      vi.useRealTimers();
+    }
+  });
+
+  it('revalida una sola vez al recuperar foco o visibilidad y descarta sondeos obsoletos tras eliminar', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-24T20:00:00.000Z'));
+    let resolveStalePoll!: (rooms: unknown[]) => void;
+    const initialRoom = {
+      id: 'room-1',
+      name: 'Física',
+      ownerId: 'u1',
+      createdAt: '2026-11-24T19:50:00.000Z',
+      lastActivityAt: '2026-11-24T19:50:00.000Z',
+      participants: 4,
+      connected: 1,
+    };
+    listRooms
+      .mockResolvedValueOnce([initialRoom])
+      .mockResolvedValueOnce([{ ...initialRoom, connected: 3 }])
+      .mockImplementationOnce(() => new Promise(resolve => { resolveStalePoll = resolve; }));
+    deleteRoom.mockResolvedValueOnce({});
+
+    try {
+      render(<MemoryRouter><DashboardPage /></MemoryRouter>);
+      await act(async () => { await Promise.resolve(); });
+      expect(screen.getByText('1 persona conectada ahora')).toBeInTheDocument();
+
+      // Back-to-back visibilitychange + focus after 2s triggers only a single revalidation.
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+        window.dispatchEvent(new Event('focus'));
+        await Promise.resolve();
+      });
+      expect(listRooms).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('3 personas conectadas ahora')).toBeInTheDocument();
+
+      // Advance to next poll while deleting; stale response resolving afterward must not restore deleted room.
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(listRooms).toHaveBeenCalledTimes(3);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Más opciones de Física' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Eliminar sala' }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Eliminar sala' }));
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole('heading', { name: 'Física' })).not.toBeInTheDocument();
+
+      await act(async () => {
+        resolveStalePoll([{ ...initialRoom, connected: 4 }]);
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole('heading', { name: 'Física' })).not.toBeInTheDocument();
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+      vi.useRealTimers();
+    }
+  });
 });

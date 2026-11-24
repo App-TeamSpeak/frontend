@@ -14,7 +14,25 @@ type DashboardStatus = 'loading' | 'success' | 'error' | 'empty';
 type RoomDialogState = { kind: 'create' } | { kind: 'join' } | { kind: 'edit'; room: RoomPreview } | { kind: 'delete'; room: RoomPreview } | null;
 
 const accents = ['#2857c5', '#0f766e', '#7c3aed'];
+const ROOMS_POLL_INTERVAL_MS = 10_000;
+const ROOMS_REVALIDATE_GAP_MS = 1_500;
 function toPreview(room: Room, index: number): RoomPreview { return { ...room, accent: accents[index % accents.length] }; }
+
+function formatRoomActivity(room: Pick<Room, 'lastActivityAt' | 'createdAt'>): string | null {
+  const value = room.lastActivityAt ?? room.createdAt;
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  const elapsedMs = Math.max(0, Date.now() - timestamp);
+  const minutes = Math.floor(elapsedMs / 60_000);
+  if (minutes < 1) return 'Última actividad hace un momento';
+  if (minutes < 60) return `Última actividad hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Última actividad hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return days === 1 ? 'Última actividad hace 1 día' : `Última actividad hace ${days} días`;
+  return `Última actividad · ${new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).format(timestamp)}`;
+}
 
 function RoomCardSkeleton({ accent }: { accent: string }) {
   return <article className="room-card room-card-skeleton" style={{ '--room-accent': accent } as React.CSSProperties} aria-hidden="true">
@@ -225,6 +243,10 @@ function RoomManagementDialog({ dialog, onClose, onSave, onDelete }: {
 }
 
 function RoomCard({ room, openMenu, onToggleMenu, onEdit, onDelete, menuButtonRef }: { room: RoomPreview; openMenu: boolean; onToggleMenu: () => void; onEdit: () => void; onDelete: () => void; menuButtonRef: (button: HTMLButtonElement | null) => void }) {
+  const activityLabel = formatRoomActivity(room);
+  const connectedCount = typeof room.connected === 'number' && Number.isFinite(room.connected)
+    ? Math.max(0, Math.trunc(room.connected))
+    : undefined;
   return <article className="room-card" style={{ '--room-accent': room.accent } as React.CSSProperties}>
     <div className="room-card-accent-clip"><div className="room-card-accent" /></div>
     <div className="room-card-content">
@@ -241,8 +263,19 @@ function RoomCard({ room, openMenu, onToggleMenu, onEdit, onDelete, menuButtonRe
           </div>}
         </div>
       </div>
+      {activityLabel && <p className="room-card-activity">{activityLabel}</p>}
       <CopyRoomId id={room.id} />
-      {room.participants !== undefined && <p className="room-card-participants">{room.participants} {room.participants === 1 ? 'miembro' : 'miembros'}</p>}
+      {room.participants !== undefined && <p className="room-card-participants">{room.participants} {room.participants === 1 ? 'participante' : 'participantes'}</p>}
+      {connectedCount !== undefined && (
+        connectedCount > 0 ? (
+          <p className="room-card-live">
+            <img src="/assets/figma/status-dot.svg" alt="" />
+            {connectedCount} {connectedCount === 1 ? 'persona conectada ahora' : 'personas conectadas ahora'}
+          </p>
+        ) : (
+          <p className="room-card-live room-card-live-idle">Sin personas conectadas ahora</p>
+        )
+      )}
       <Link className="room-card-enter" to={`/salas/${encodeURIComponent(room.id)}`}>Entrar&nbsp; →</Link>
     </div>
   </article>;
@@ -265,6 +298,10 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
   const [partial, setPartial] = useState(false);
   const { state: creation, shared, operation } = useRoomOperation();
   const sequence = useRef(0);
+  const mutationEpoch = useRef(0);
+  const lastRefreshAt = useRef(0);
+  const foregroundInFlight = useRef(false);
+  const silentController = useRef<AbortController | null>(null);
   const listFailed = useRef(false);
   const createdDuringLoad = useRef<Room[]>([]);
   const active = useRef(false);
@@ -295,8 +332,37 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
     setRoomList(owned.map((item, index) => toPreview(item, index)));
     setStatus(owned.length ? 'success' : 'empty');
   }
-  async function loadRooms() {
+  async function loadRooms(silent = false) {
+    if (silent) {
+      if (document.visibilityState === 'hidden' || foregroundInFlight.current || silentController.current) return;
+      const controller = new AbortController();
+      silentController.current = controller;
+      lastRefreshAt.current = Date.now();
+      const attempt = sequence.current;
+      const epoch = mutationEpoch.current;
+      try {
+        const data = await api.listRooms(controller.signal);
+        if (active.current && !controller.signal.aborted && attempt === sequence.current && epoch === mutationEpoch.current) {
+          const confirmed = createdDuringLoad.current;
+          acceptRooms([...confirmed.filter(created => !data.some(room => room.id === created.id)), ...data]);
+          listFailed.current = false;
+          setPartial(false);
+          lastRefreshAt.current = Date.now();
+        }
+      } catch {
+        // Keep existing cards intact if a background refresh fails transiently.
+      } finally {
+        if (silentController.current === controller) silentController.current = null;
+      }
+      return;
+    }
+
+    silentController.current?.abort();
+    silentController.current = null;
     const attempt = ++sequence.current;
+    mutationEpoch.current++;
+    foregroundInFlight.current = true;
+    lastRefreshAt.current = Date.now();
     if (!partial) createdDuringLoad.current = [];
     if (!partial) setStatus('loading');
     try {
@@ -306,6 +372,7 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
         acceptRooms([...confirmed.filter(created => !data.some(room => room.id === created.id)), ...data]);
         listFailed.current = false;
         setPartial(false);
+        lastRefreshAt.current = Date.now();
       }
     } catch (error) {
       if (active.current && attempt === sequence.current) {
@@ -314,23 +381,59 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
         setLoadError(roomError(error, 'No fue posible obtener la lista de salas. Comprueba tu conexión e inténtalo de nuevo.'));
         setStatus('error');
       }
+    } finally {
+      if (attempt === sequence.current) foregroundInFlight.current = false;
     }
   }
   useEffect(() => {
     active.current = true;
     void loadRooms();
-    return () => { active.current = false; sequence.current++; };
+    return () => {
+      active.current = false;
+      sequence.current++;
+      silentController.current?.abort();
+      silentController.current = null;
+      foregroundInFlight.current = false;
+    };
   }, [uid]);
+  const pollEnabled = status === 'success' || status === 'empty';
+  useEffect(() => {
+    if (!pollEnabled) return;
+    const revalidate = (respectGap: boolean) => {
+      if (document.visibilityState === 'hidden') return;
+      if (respectGap && Date.now() - lastRefreshAt.current < ROOMS_REVALIDATE_GAP_MS) return;
+      void loadRooms(true);
+    };
+    const intervalId = window.setInterval(() => revalidate(false), ROOMS_POLL_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') revalidate(true);
+    };
+    const onFocus = () => revalidate(true);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [pollEnabled, uid]);
 
   async function handleSaveRoom(name: string) {
     if (managementDialog?.kind !== 'edit') return;
     const updated = await api.updateRoom(managementDialog.room.id, { name });
     if (!active.current) return;
+    mutationEpoch.current++;
+    silentController.current?.abort();
+    silentController.current = null;
+    createdDuringLoad.current = createdDuringLoad.current.map(room => room.id === updated.id ? updated : room);
     setRoomList(current => current.map((room, index) => room.id === updated.id ? { ...room, ...toPreview(updated, index) } : room));
     setManagementDialog(null);
   }
 
   function handleCreateRoom(room: Room) {
+    mutationEpoch.current++;
+    silentController.current?.abort();
+    silentController.current = null;
     createdDuringLoad.current = [room, ...createdDuringLoad.current.filter(item => item.id !== room.id)];
     if (listFailed.current) setPartial(true);
     setRoomList(current => [room, ...current.filter(item => item.id !== room.id)].map((item, index) => toPreview(item, index)));
@@ -341,6 +444,9 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
     if (creation.phase === 'created') handleCreateRoom(creation.room);
     if (creation.phase === 'reviewed') {
       sequence.current++;
+      mutationEpoch.current++;
+      silentController.current?.abort();
+      silentController.current = null;
       acceptRooms(creation.rooms);
       listFailed.current = false;
       setPartial(false);
@@ -358,6 +464,10 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
     const { id } = managementDialog.room;
     await api.deleteRoom(id);
     if (!active.current) return;
+    mutationEpoch.current++;
+    silentController.current?.abort();
+    silentController.current = null;
+    createdDuringLoad.current = createdDuringLoad.current.filter(room => room.id !== id);
     if (creation.phase === 'created' && creation.room.id === id) operation.set({ phase: 'idle' });
     setRoomList(current => current.filter(room => room.id !== id));
     setManagementDialog(null);

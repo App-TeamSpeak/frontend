@@ -16,7 +16,7 @@ export type DeletionReceipt = { status: 'pending' | 'completed'; statusToken?: s
 export type EmailChangeEligibility = {
   eligible: true; currentEmail: string; targetEmail: string; nextStep: 'verify_before_update_email';
 };
-export type Room = { id: string; name: string; ownerId: string; createdAt?: string; participants?: number; connected?: number };
+export type Room = { id: string; name: string; ownerId: string; createdAt?: string; lastActivityAt?: string; participants?: number; connected?: number };
 export type Message = { id: string; roomId: string; authorId: string | null; authorDeleted?: boolean; authorName?: string | null; text: string; createdAt: string };
 export type MessageHistoryPage = { messages: Message[]; nextCursor: string | null };
 export type ListMessagesOptions = { limit?: number; cursor?: string; signal?: AbortSignal };
