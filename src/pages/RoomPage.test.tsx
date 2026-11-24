@@ -680,4 +680,329 @@ describe('RoomPage', () => {
     expect(cardFor('Luis Gómez')).toEqual({ name: 'Luis Gómez', initials: 'LG' });
     expect(cardFor('Usuario u4abcd')).toEqual({ name: 'Usuario u4abcd', initials: 'US' });
   });
+
+  it('hace auto-scroll al final en carga inicial y al enviar o recibir mensajes estando abajo', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({
+      messages: [
+        { id: 'm1', roomId: 'room-1', authorId: 'u2', authorName: 'Luis Herrera', text: 'Primero', createdAt: '2026-01-01T12:00:00Z' },
+      ],
+      nextCursor: null,
+    });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    await screen.findByText('Primero');
+    const list = document.querySelector('.room-chat-messages') as HTMLElement;
+    let currentHeight = 600;
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => 200 });
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => currentHeight });
+
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalled());
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    act(() => {
+      listeners['connect']();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1', 'u2'] });
+      acknowledgeJoin();
+    });
+
+    list.scrollTop = 400;
+    fireEvent.scroll(list);
+    currentHeight = 720;
+    act(() => {
+      listeners['chat:message']({ messageId: 'm2', authorId: 'u2', authorName: 'Luis Herrera', text: 'En vivo', createdAt: '2026-01-01T12:01:00Z' });
+    });
+
+    expect(screen.getByText('En vivo')).toBeVisible();
+    expect(list.scrollTop).toBe(720);
+    expect(screen.queryByRole('button', { name: /Mensajes nuevos/ })).not.toBeInTheDocument();
+
+    list.scrollTop = 60;
+    fireEvent.scroll(list);
+    const emit = vi.fn();
+    Object.assign(mocks.socket, { volatile: { timeout: vi.fn().mockReturnValue({ emit }) } });
+    fireEvent.change(screen.getByLabelText('Mensaje para la sala'), { target: { value: 'Mi respuesta' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+
+    currentHeight = 840;
+    act(() => {
+      listeners['chat:message']({ messageId: 'm3', authorId: 'u1', text: 'Mi respuesta', createdAt: '2026-01-01T12:02:00Z' });
+      emit.mock.calls[0][2](null, { ok: true });
+    });
+
+    expect(list.scrollTop).toBe(840);
+    expect(screen.queryByRole('button', { name: /Mensajes nuevos/ })).not.toBeInTheDocument();
+  });
+
+  it('no envía mensajes vacíos ni compuestos solo por espacios', async () => {
+    const { listeners } = await setupRealtime();
+    const emit = vi.fn();
+    Object.assign(mocks.socket, { volatile: { timeout: vi.fn().mockReturnValue({ emit }) } });
+    act(() => {
+      listeners.connect();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1'] });
+      acknowledgeJoin();
+    });
+
+    const input = screen.getByLabelText('Mensaje para la sala');
+    const submit = screen.getByRole('button', { name: 'Enviar mensaje' });
+    const form = submit.closest('form') as HTMLFormElement;
+
+    expect(submit).toBeDisabled();
+    fireEvent.submit(form);
+    fireEvent.change(input, { target: { value: '   \t  ' } });
+    expect(submit).toBeDisabled();
+    fireEvent.submit(form);
+
+    expect(emit).not.toHaveBeenCalled();
+    expect(screen.queryByText('Enviando mensaje…')).not.toBeInTheDocument();
+  });
+
+  it('no fuerza el scroll al leer mensajes anteriores, muestra Mensajes nuevos y vuelve al final al activarlo o bajar manualmente', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({
+      messages: [
+        { id: 'm1', roomId: 'room-1', authorId: 'u2', text: 'Mensaje antiguo', createdAt: '2026-01-01T12:00:00Z' },
+      ],
+      nextCursor: null,
+    });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    await screen.findByText('Mensaje antiguo');
+    const list = document.querySelector('.room-chat-messages') as HTMLElement;
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => 200 });
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 800 });
+
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalled());
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    act(() => {
+      listeners.connect();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1', 'u2'] });
+      acknowledgeJoin();
+    });
+
+    list.scrollTop = 60;
+    fireEvent.scroll(list);
+
+    act(() => {
+      listeners['chat:message']({ messageId: 'm2', authorId: 'u2', text: 'Nuevo 1', createdAt: '2026-01-01T12:01:00Z' });
+      listeners['chat:message']({ messageId: 'm2', authorId: 'u2', text: 'Nuevo 1', createdAt: '2026-01-01T12:01:00Z' });
+    });
+
+    expect(list.scrollTop).toBe(60);
+    expect(screen.getByRole('button', { name: 'Mensajes nuevos (1) · Ir al final' })).toBeVisible();
+
+    act(() => {
+      listeners['chat:message']({ messageId: 'm3', authorId: 'u2', text: 'Nuevo 2', createdAt: '2026-01-01T12:02:00Z' });
+    });
+
+    expect(list.scrollTop).toBe(60);
+    const indicator = screen.getByRole('button', { name: 'Mensajes nuevos (2) · Ir al final' });
+    fireEvent.click(indicator);
+
+    expect(list.scrollTop).toBe(800);
+    expect(screen.queryByRole('button', { name: /Mensajes nuevos/ })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(list);
+
+    list.scrollTop = 40;
+    fireEvent.scroll(list);
+    act(() => {
+      listeners['chat:message']({ messageId: 'm4', authorId: 'u2', text: 'Nuevo 3', createdAt: '2026-01-01T12:03:00Z' });
+    });
+    expect(screen.getByRole('button', { name: 'Mensajes nuevos (1) · Ir al final' })).toBeVisible();
+
+    list.scrollTop = 585;
+    fireEvent.scroll(list);
+    expect(screen.queryByRole('button', { name: /Mensajes nuevos/ })).not.toBeInTheDocument();
+  });
+
+  it('aísla mensajes por sala al cambiar de ruta y descarta eventos con otra sala', async () => {
+    const router = createMemoryRouter([{ path: '/salas/:id', element: <RoomPage /> }], {
+      initialEntries: ['/salas/room-1'],
+    });
+    mocks.getRoom.mockImplementation(async (id: string) => ({ id, name: `Sala ${id}`, ownerId: 'u1' }));
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    render(<RouterProvider router={router} />);
+
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalledOnce());
+    const listeners1 = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    act(() => {
+      listeners1.connect();
+      listeners1['room:joined']({ roomId: 'room-1', participants: ['u1', 'u2'] });
+      acknowledgeJoin();
+    });
+
+    act(() => {
+      listeners1['chat:message']({ messageId: 'm-other', roomId: 'room-2', authorId: 'u2', text: 'De otra sala', createdAt: '2026-01-01T12:00:00Z' });
+      listeners1['chat:message']({ messageId: 'm-r1', roomId: 'room-1', authorId: 'u2', text: 'Solo sala 1', createdAt: '2026-01-01T12:01:00Z' });
+    });
+    expect(screen.queryByText('De otra sala')).not.toBeInTheDocument();
+    expect(screen.getByText('Solo sala 1')).toBeVisible();
+
+    await act(async () => { await router.navigate('/salas/room-2'); });
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalledTimes(2));
+
+    expect(screen.queryByText('Solo sala 1')).not.toBeInTheDocument();
+    act(() => {
+      listeners1['chat:message']({ messageId: 'm-stale', authorId: 'u2', text: 'Evento viejo', createdAt: '2026-01-01T12:02:00Z' });
+    });
+    expect(screen.queryByText('Evento viejo')).not.toBeInTheDocument();
+  });
+
+  it('muestra estado enviando, limpia error tras reintento exitoso y distingue reconexión o desconexión', async () => {
+    const { listeners } = await setupRealtime();
+    const emit = vi.fn();
+    Object.assign(mocks.socket, { volatile: { timeout: vi.fn().mockReturnValue({ emit }) } });
+    act(() => {
+      listeners.connect();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1'] });
+      acknowledgeJoin();
+    });
+
+    const input = screen.getByLabelText('Mensaje para la sala');
+    fireEvent.change(input, { target: { value: 'Primer intento' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+
+    expect(screen.getByText('Enviando mensaje…')).toBeVisible();
+    act(() => {
+      listeners['error:message']({ code: 'EVENT_FAILED' });
+      emit.mock.calls[0][2](null, { ok: false });
+    });
+
+    expect(screen.queryByText('Enviando mensaje…')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('No pudimos enviar el mensaje.');
+    expect(screen.queryByText('No pudimos completar la operación en tiempo real.')).not.toBeInTheDocument();
+    expect(input).toHaveValue('Primer intento');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Enviando mensaje…')).toBeVisible();
+
+    act(() => {
+      emit.mock.calls[1][2](null, { ok: true });
+    });
+    expect(screen.queryByText('Enviando mensaje…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    act(() => {
+      mocks.socket.connected = false;
+      listeners.disconnect('transport close');
+    });
+    expect(screen.getByText('Restableciendo conexión con la sala…')).toBeVisible();
+
+    act(() => {
+      mocks.socket.active = false;
+      listeners.disconnect('io server disconnect');
+    });
+    expect(screen.getByText('Sin conexión. No es posible enviar mensajes.')).toBeVisible();
+  });
+
+  it('conserva borrador y alerta ante desconexión en vuelo, envíos concurrentes y paginación en el mismo batch', async () => {
+    let resolveOlder!: (v: { messages: unknown[]; nextCursor: string | null }) => void;
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages
+      .mockResolvedValueOnce({
+        messages: [{ id: 'm1', roomId: 'room-1', authorId: 'u2', text: 'Base', createdAt: '2026-01-01T12:01:00Z' }],
+        nextCursor: 'c1',
+      })
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOlder = resolve; }));
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    const loadMore = await screen.findByRole('button', { name: 'Ver más antiguos' });
+    const list = document.querySelector('.room-chat-messages') as HTMLElement;
+    let currentHeight = 160;
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => 200 });
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => currentHeight });
+
+    await waitFor(() => expect(mocks.socket.connect).toHaveBeenCalledOnce());
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([n, cb]) => [n, cb]));
+    const emit = vi.fn();
+    Object.assign(mocks.socket, { volatile: { timeout: vi.fn().mockReturnValue({ emit }) } });
+    act(() => {
+      listeners.connect();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1', 'u2'] });
+      acknowledgeJoin();
+    });
+
+    // 1. Live peer message while short list is at bottom + pagination in flight does NOT strand Mensajes nuevos
+    fireEvent.click(loadMore);
+    act(() => {
+      listeners['chat:message']({ messageId: 'm2', authorId: 'u2', text: 'Mientras pagina abajo', createdAt: '2026-01-01T12:02:00Z' });
+    });
+    expect(screen.queryByRole('button', { name: /Mensajes nuevos/ })).not.toBeInTheDocument();
+
+    // 2. Concurrent send + same-batch resolution preserves to-bottom scroll and keeps second error alert
+    currentHeight = 600;
+    list.scrollTop = 40;
+    fireEvent.scroll(list);
+
+    const input = screen.getByLabelText('Mensaje para la sala');
+    fireEvent.change(input, { target: { value: 'Primero concurrente' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+    fireEvent.change(input, { target: { value: 'Segundo concurrente' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+
+    currentHeight = 720;
+    await act(async () => {
+      resolveOlder({ messages: [], nextCursor: null });
+      listeners['chat:message']({ messageId: 'm3', authorId: 'u1', text: 'Primero concurrente', createdAt: '2026-01-01T12:03:00Z' });
+      listeners['error:message']({ code: 'AUTHORIZATION_UNAVAILABLE' });
+      emit.mock.calls[1][2](null, { ok: false });
+      emit.mock.calls[0][2](null, { ok: true });
+    });
+
+    expect(list.scrollTop).toBe(720);
+    expect(screen.getByRole('alert')).toHaveTextContent('No pudimos enviar el mensaje.');
+    expect(screen.queryByText('No pudimos completar la operación en tiempo real.')).not.toBeInTheDocument();
+    expect(input).toHaveValue('Segundo concurrente');
+
+    // 3. Disconnect while in flight restores draft and reports chatError
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+    expect(input).toHaveValue('');
+    act(() => {
+      mocks.socket.connected = false;
+      listeners.disconnect('transport close');
+    });
+    expect(input).toHaveValue('Segundo concurrente');
+    expect(screen.getByRole('alert')).toHaveTextContent('No pudimos enviar el mensaje por pérdida de conexión.');
+  });
+
+  it('mantiene accesible por teclado el historial y no silencia errores posteriores ni borra alertas de envíos fallidos', async () => {
+    const { listeners } = await setupRealtime();
+    const emit = vi.fn();
+    Object.assign(mocks.socket, { volatile: { timeout: vi.fn().mockReturnValue({ emit }) } });
+    act(() => {
+      listeners.connect();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1'] });
+      acknowledgeJoin();
+    });
+
+    const list = screen.getByRole('region', { name: 'Historial de mensajes' });
+    expect(list).toHaveAttribute('tabindex', '0');
+
+    const input = screen.getByLabelText('Mensaje para la sala');
+    fireEvent.change(input, { target: { value: 'Primero fallido' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+    fireEvent.change(input, { target: { value: 'Segundo exitoso' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
+
+    // Backend emits error:message BEFORE ack({ ok: false })
+    act(() => {
+      listeners['error:message']({ code: 'EVENT_FAILED' });
+      emit.mock.calls[0][2](null, { ok: false });
+      emit.mock.calls[1][2](null, { ok: true });
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('No pudimos enviar el mensaje.');
+    expect(input).toHaveValue('Primero fallido');
+
+    // Subsequent unrelated error:message must still surface
+    act(() => {
+      listeners['error:message']({ code: 'EVENT_FAILED' });
+    });
+    expect(screen.getByText('No pudimos completar la operación en tiempo real.')).toBeVisible();
+  });
 });
