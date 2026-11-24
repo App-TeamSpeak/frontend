@@ -1,13 +1,30 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../services/api';
 import { DashboardPage } from './DashboardPage';
 
 const { listRooms, createRoom, updateRoom, deleteRoom, joinRoom, auth } = vi.hoisted(() => ({ listRooms: vi.fn().mockResolvedValue([]), createRoom: vi.fn(), updateRoom: vi.fn(), deleteRoom: vi.fn(), joinRoom: vi.fn(), auth: { user: undefined as undefined | { id: string } } }));
 beforeEach(() => { vi.clearAllMocks(); listRooms.mockReset().mockResolvedValue([]); auth.user = undefined; });
 afterEach(() => cleanup());
 vi.mock('../auth/AuthContext', () => ({ useOptionalAuth: () => auth }));
-vi.mock('../services/api', () => ({ api: { listRooms, createRoom, updateRoom, deleteRoom, joinRoom }, ApiError: class ApiError extends Error {} }));
+vi.mock('../services/api', () => {
+  class MockApiError extends Error {
+    readonly code: string;
+    readonly status: number;
+    constructor(status: number, payload: { code: string; message: string }) {
+      super(payload.message);
+      this.name = 'ApiError';
+      this.status = status;
+      this.code = payload.code;
+    }
+  }
+  return { api: { listRooms, createRoom, updateRoom, deleteRoom, joinRoom }, ApiError: MockApiError };
+});
+
+function LocationProbe() {
+  return <span data-testid="location">{useLocation().pathname}</span>;
+}
 
 describe('DashboardPage', () => {
   it('carga el estado vacío desde la API', async () => {
@@ -141,5 +158,89 @@ describe('DashboardPage', () => {
     render(<MemoryRouter><DashboardPage /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByRole('heading', { name: 'Sala' })).toBeInTheDocument();
+  });
+
+  it('valida ID vacío e inválido en el modal de ingreso sin enviar petición HTTP y conserva el foco', async () => {
+    render(<MemoryRouter><DashboardPage /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'No tienes salas' });
+
+    const trigger = screen.getByRole('button', { name: '＋ Unirse a sala' });
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Unirse a sala' });
+    const input = screen.getByLabelText('ID de la sala');
+    const submit = screen.getByRole('button', { name: 'Unirse a la sala' });
+    expect(input).toHaveFocus();
+
+    fireEvent.click(submit);
+    expect(screen.getByRole('alert')).toHaveTextContent('Ingresa el código de la Sala para continuar');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', 'manage-room-error');
+    expect(input).toHaveFocus();
+    expect(dialog).toHaveClass('room-management-dialog-join-error');
+
+    fireEvent.change(input, { target: { value: 'nested/room' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(dialog).not.toHaveClass('room-management-dialog-join-error');
+
+    fireEvent.click(submit);
+    expect(screen.getByRole('alert')).toHaveTextContent('El código ingresado no tiene un formato válido');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveFocus();
+    expect(dialog).toHaveClass('room-management-dialog-join-error');
+    expect(joinRoom).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog', { name: 'Unirse a sala' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('anuncia ROOM_NOT_FOUND en el modal de ingreso y mantiene el diálogo abierto', async () => {
+    joinRoom.mockRejectedValueOnce(
+      new ApiError(404, { success: false, code: 'ROOM_NOT_FOUND', message: 'La sala no existe.' }),
+    );
+    render(<MemoryRouter><DashboardPage /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'No tienes salas' });
+
+    fireEvent.click(screen.getByRole('button', { name: '＋ Unirse a sala' }));
+    fireEvent.change(screen.getByLabelText('ID de la sala'), { target: { value: 'NO-EXISTE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Unirse a la sala' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('La sala no existe.');
+    expect(screen.getByRole('dialog', { name: 'Unirse a sala' })).toBeInTheDocument();
+  });
+
+  it('muestra carga, evita envíos duplicados y navega usando room.id devuelto por el backend', async () => {
+    let resolveJoin!: (value: { id: string; name: string; ownerId: string }) => void;
+    joinRoom.mockImplementation(() => new Promise(resolve => { resolveJoin = resolve; }));
+    render(<MemoryRouter initialEntries={['/dashboard']}><LocationProbe /><DashboardPage /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'No tienes salas' });
+
+    fireEvent.click(screen.getByRole('button', { name: '＋ Unirse a sala' }));
+    const dialog = screen.getByRole('dialog', { name: 'Unirse a sala' });
+    const input = screen.getByLabelText('ID de la sala');
+    const submit = screen.getByRole('button', { name: 'Unirse a la sala' });
+    const cancel = screen.getByRole('button', { name: 'Cancelar' });
+
+    fireEvent.change(input, { target: { value: '  alias-sala  ' } });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    expect(joinRoom).toHaveBeenCalledTimes(1);
+    expect(joinRoom).toHaveBeenCalledWith('alias-sala');
+    expect(dialog).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('Uniéndote a la sala…');
+    expect(input).toBeDisabled();
+    expect(submit).toBeDisabled();
+    expect(cancel).toBeDisabled();
+
+    fireEvent(dialog, new Event('cancel', { cancelable: true }));
+    expect(screen.getByRole('dialog', { name: 'Unirse a sala' })).toBeInTheDocument();
+
+    resolveJoin({ id: 'canonical room/id', name: 'Cálculo II', ownerId: 'u2' });
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/salas/canonical%20room%2Fid'),
+    );
+    expect(screen.queryByRole('dialog', { name: 'Unirse a sala' })).not.toBeInTheDocument();
   });
 });
