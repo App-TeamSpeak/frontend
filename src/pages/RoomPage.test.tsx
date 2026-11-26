@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   getRoom: vi.fn(),
   listMessages: vi.fn(),
   createMessage: vi.fn(),
+  updateRoom: vi.fn(),
+  deleteRoom: vi.fn(),
   socket: { on: vi.fn(), emit: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), removeAllListeners: vi.fn(), connected: true, active: true, io: { on: vi.fn(), off: vi.fn() } },
   io: vi.fn(),
 }));
@@ -27,6 +29,38 @@ beforeEach(() => { vi.clearAllMocks(); mocks.user.id = 'u1'; mocks.socket.connec
 afterEach(cleanup);
 
 describe('RoomPage', () => {
+  it('muestra gestión solo al anfitrión y sincroniza el nombre por realtime', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala original', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+    expect(await screen.findByRole('button', { name: 'Editar sala' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Eliminar sala' })).toBeInTheDocument();
+    await waitFor(() => expect(mocks.socket.on).toHaveBeenCalledWith('room:updated', expect.any(Function)));
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([name, callback]) => [name, callback]));
+    act(() => listeners['room:updated']({ roomId: 'room-1', name: 'Sala sincronizada' }));
+    expect(screen.getByRole('heading', { name: 'Sala sincronizada' })).toBeInTheDocument();
+  });
+
+  it('anuncia chat y presencia en regiones vivas separadas', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+    await screen.findByRole('heading', { name: 'Sala' });
+    await waitFor(() => expect(mocks.socket.on).toHaveBeenCalledWith('connect', expect.any(Function)));
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([name, callback]) => [name, callback]));
+    act(() => {
+      listeners.connect();
+      acknowledgeJoin();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1'] });
+      listeners['room:participant-joined']({ userId: 'u2', authorName: 'Luis Gómez' });
+      listeners['chat:message']({ messageId: 'm2', authorId: 'u2', authorName: 'Luis Gómez', text: 'Hola', createdAt: '2026-01-01T12:00:00Z' });
+    });
+    expect(screen.getByRole('status', { name: 'Anuncios de participantes' })).toHaveTextContent('Luis Gómez se unió');
+    expect(screen.getByRole('status', { name: 'Anuncios del chat' })).toHaveTextContent('Nuevo mensaje de Luis Gómez');
+  });
+
   it('limita miniaturas y anuncia participantes adicionales', () => {
     const participants = Array.from({ length: 6 }, (_, index) => ({ name: `Persona ${index}`, initials: 'P', microphone: 'off' as const, camera: 'off' as const }));
     render(<PictureInPictureStrip participants={participants} />);

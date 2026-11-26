@@ -3313,7 +3313,31 @@ button:disabled {
 .room-header-actions {
   display: flex;
   align-items: center;
-  gap: 70px;
+  gap: 12px;
+}
+
+.room-owner-action {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--subtle);
+  color: var(--text);
+}
+
+.room-owner-action-danger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.room-management-dialog > label {
+  display: block;
+  margin: 20px 0 8px;
+  font-weight: 600;
+}
+
+.room-management-dialog > input {
+  width: 100%;
 }
 
 .room-panel-toggles {
