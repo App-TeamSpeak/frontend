@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PictureInPictureStrip, RoomPage } from './RoomPage';
@@ -40,6 +40,41 @@ describe('RoomPage', () => {
     const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([name, callback]) => [name, callback]));
     act(() => listeners['room:updated']({ roomId: 'room-1', name: 'Sala sincronizada' }));
     expect(screen.getByRole('heading', { name: 'Sala sincronizada' })).toBeInTheDocument();
+  });
+
+  it('permite editar el nombre de la sala y muestra el error de actualización', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala original', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    mocks.updateRoom.mockRejectedValueOnce(new Error('fallo'));
+    renderRoom();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar sala' }));
+    fireEvent.change(screen.getByLabelText('Nombre de la sala'), { target: { value: 'Sala nueva' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos actualizar el nombre de la sala.');
+    expect(mocks.updateRoom).toHaveBeenCalledWith('room-1', { name: 'Sala nueva' });
+
+    mocks.updateRoom.mockResolvedValueOnce({ id: 'room-1', name: 'Sala nueva', ownerId: 'u1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Sala nueva' })).toBeInTheDocument();
+  });
+
+  it('permite cancelar y eliminar la sala desde los controles del anfitrión', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala original', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    mocks.deleteRoom.mockResolvedValueOnce(undefined);
+    renderRoom();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar sala' }));
+    expect(screen.getByRole('heading', { name: '¿Eliminar esta sala?' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('heading', { name: '¿Eliminar esta sala?' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar sala' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Eliminar sala' }));
+    await waitFor(() => expect(mocks.deleteRoom).toHaveBeenCalledWith('room-1'));
   });
 
   it('anuncia chat y presencia en regiones vivas separadas', async () => {
