@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PictureInPictureStrip, RoomPage } from './RoomPage';
@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   getRoom: vi.fn(),
   listMessages: vi.fn(),
   createMessage: vi.fn(),
+  updateRoom: vi.fn(),
+  deleteRoom: vi.fn(),
   socket: { on: vi.fn(), emit: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), removeAllListeners: vi.fn(), connected: true, active: true, io: { on: vi.fn(), off: vi.fn() } },
   io: vi.fn(),
 }));
@@ -27,6 +29,73 @@ beforeEach(() => { vi.clearAllMocks(); mocks.user.id = 'u1'; mocks.socket.connec
 afterEach(cleanup);
 
 describe('RoomPage', () => {
+  it('muestra gestión solo al anfitrión y sincroniza el nombre por realtime', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala original', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+    expect(await screen.findByRole('button', { name: 'Editar sala' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Eliminar sala' })).toBeInTheDocument();
+    await waitFor(() => expect(mocks.socket.on).toHaveBeenCalledWith('room:updated', expect.any(Function)));
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([name, callback]) => [name, callback]));
+    act(() => listeners['room:updated']({ roomId: 'room-1', name: 'Sala sincronizada' }));
+    expect(screen.getByRole('heading', { name: 'Sala sincronizada' })).toBeInTheDocument();
+  });
+
+  it('permite editar el nombre de la sala y muestra el error de actualización', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala original', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    mocks.updateRoom.mockRejectedValueOnce(new Error('fallo'));
+    renderRoom();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar sala' }));
+    fireEvent.change(screen.getByLabelText('Nombre de la sala'), { target: { value: 'Sala nueva' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos actualizar el nombre de la sala.');
+    expect(mocks.updateRoom).toHaveBeenCalledWith('room-1', { name: 'Sala nueva' });
+
+    mocks.updateRoom.mockResolvedValueOnce({ id: 'room-1', name: 'Sala nueva', ownerId: 'u1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Sala nueva' })).toBeInTheDocument();
+  });
+
+  it('permite cancelar y eliminar la sala desde los controles del anfitrión', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala original', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    mocks.deleteRoom.mockResolvedValueOnce(undefined);
+    renderRoom();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar sala' }));
+    expect(screen.getByRole('heading', { name: '¿Eliminar esta sala?' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('heading', { name: '¿Eliminar esta sala?' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar sala' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Eliminar sala' }));
+    await waitFor(() => expect(mocks.deleteRoom).toHaveBeenCalledWith('room-1'));
+  });
+
+  it('anuncia chat y presencia en regiones vivas separadas', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+    await screen.findByRole('heading', { name: 'Sala' });
+    await waitFor(() => expect(mocks.socket.on).toHaveBeenCalledWith('connect', expect.any(Function)));
+    const listeners = Object.fromEntries(mocks.socket.on.mock.calls.map(([name, callback]) => [name, callback]));
+    act(() => {
+      listeners.connect();
+      acknowledgeJoin();
+      listeners['room:joined']({ roomId: 'room-1', participants: ['u1'] });
+      listeners['room:participant-joined']({ userId: 'u2', authorName: 'Luis Gómez' });
+      listeners['chat:message']({ messageId: 'm2', authorId: 'u2', authorName: 'Luis Gómez', text: 'Hola', createdAt: '2026-01-01T12:00:00Z' });
+    });
+    expect(screen.getByRole('status', { name: 'Anuncios de participantes' })).toHaveTextContent('Luis Gómez se unió');
+    expect(screen.getByRole('status', { name: 'Anuncios del chat' })).toHaveTextContent('Nuevo mensaje de Luis Gómez');
+  });
+
   it('limita miniaturas y anuncia participantes adicionales', () => {
     const participants = Array.from({ length: 6 }, (_, index) => ({ name: `Persona ${index}`, initials: 'P', microphone: 'off' as const, camera: 'off' as const }));
     render(<PictureInPictureStrip participants={participants} />);

@@ -1,7 +1,7 @@
 import { roomError } from '../utils/roomError';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type UIEvent } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { firebaseAuth } from '../firebase';
 import { api, type Message, type Room } from '../services/api';
 import { useAuth } from '../auth/AuthContext';
@@ -31,6 +31,7 @@ export function RoomPage() {
 
 function RoomView({ roomId }: { roomId: string }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [room, setRoom] = useState<Room | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<RoomMessage[]>([]);
@@ -50,6 +51,12 @@ function RoomView({ roomId }: { roomId: string }) {
   const [mic, setMic] = useState(false);
   const [camera, setCamera] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [chatAnnouncement, setChatAnnouncement] = useState('');
+  const [participantAnnouncement, setParticipantAnnouncement] = useState('');
+  const [managementDialog, setManagementDialog] = useState<'edit' | 'delete' | null>(null);
+  const [editName, setEditName] = useState('');
+  const [managementError, setManagementError] = useState('');
+  const [managingRoom, setManagingRoom] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const olderPendingRef = useRef(false);
   const initialHistoryStartedRef = useRef(false);
@@ -338,6 +345,10 @@ function RoomView({ roomId }: { roomId: string }) {
           setSharing(false);
           denyOrFail(event.code, '');
         });
+        socket.on('room:updated', (event: { roomId?: string; name?: string } | undefined) => {
+          if (!valid() || event?.roomId !== roomId || typeof event.name !== 'string') return;
+          setRoom(current => current ? { ...current, name: event.name! } : current);
+        });
         socket.on('disconnect', () => {
           if (!valid()) return;
           resetJoin();
@@ -399,8 +410,9 @@ function RoomView({ roomId }: { roomId: string }) {
           }
           const message = fromMessage({ ...value, id: value.messageId, roomId }, currentUserId);
           setMessages(current => appendLiveMessage(current, message));
+          if (value.authorId !== currentUserId) setChatAnnouncement(`Nuevo mensaje de ${message.sender}, ${message.time}: ${message.text}`);
         });
-        function addParticipant(participantId: string, authorName?: string | null) {
+        function addParticipant(participantId: string, authorName?: string | null, announce = false) {
           const isSelf = participantId === currentUserId;
           const resolvedName = typeof authorName === 'string' ? authorName.trim() : '';
           const name = isSelf
@@ -409,11 +421,23 @@ function RoomView({ roomId }: { roomId: string }) {
           const participantInitials = isSelf
             ? initials(user?.name ?? 'Tú')
             : resolvedName ? initials(resolvedName) : 'US';
-          setParticipants(current => current.some(item => item.id === participantId) ? current :
-            [...current, { id: participantId, name, initials: participantInitials, microphone: 'off', camera: 'off', active: isSelf }]);
+          setParticipants(current => {
+            if (current.some(item => item.id === participantId)) return current;
+            const next = [...current, { id: participantId, name, initials: participantInitials, microphone: 'off' as const, camera: 'off' as const, active: isSelf }];
+            if (announce && !isSelf) setParticipantAnnouncement(`${name} se unió a la sala. ${next.length} participantes.`);
+            return next;
+          });
         }
-        socket.on('room:participant-joined', ({ userId, authorName }: { userId: string; authorName?: string | null }) => { if (valid() && joined) addParticipant(userId, authorName); });
-        socket.on('room:participant-left', ({ userId }: { userId: string }) => { if (valid() && joined) setParticipants(current => current.filter(item => item.id !== userId)); });
+        socket.on('room:participant-joined', ({ userId, authorName }: { userId: string; authorName?: string | null }) => { if (valid() && joined) addParticipant(userId, authorName, true); });
+        socket.on('room:participant-left', ({ userId }: { userId: string }) => {
+          if (!valid() || !joined) return;
+          setParticipants(current => {
+            const participant = current.find(item => item.id === userId);
+            const next = current.filter(item => item.id !== userId);
+            if (participant) setParticipantAnnouncement(`${participant.name} salió de la sala. ${next.length} participantes.`);
+            return next;
+          });
+        });
         socket.on('media:state', ({ fromUserId, payload }: { fromUserId?: string; payload?: { microphone?: boolean; camera?: boolean } }) => {
           if (valid() && joined) setParticipants(current => current.map(item => item.id === fromUserId ? { ...item, microphone: payload?.microphone ? 'on' : 'off', camera: payload?.camera ? 'on' : 'off' } : item));
         });
@@ -477,6 +501,23 @@ function RoomView({ roomId }: { roomId: string }) {
     });
   }
   function emitMedia(nextMic = mic, nextCamera = camera) { socketRef.current?.emit('media:state', { microphone: nextMic, camera: nextCamera }); }
+  async function saveRoomName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = editName.trim();
+    if (!room || !name || name === room.name || managingRoom) return;
+    setManagingRoom(true); setManagementError('');
+    try {
+      const updated = await api.updateRoom(room.id, { name });
+      setRoom(updated); setManagementDialog(null);
+    } catch { setManagementError('No pudimos actualizar el nombre de la sala.'); }
+    finally { setManagingRoom(false); }
+  }
+  async function deleteCurrentRoom() {
+    if (!room || managingRoom) return;
+    setManagingRoom(true); setManagementError('');
+    try { await api.deleteRoom(room.id); navigate('/dashboard', { replace: true }); }
+    catch { setManagementError('No pudimos eliminar la sala.'); setManagingRoom(false); }
+  }
   const chatStatus = sendingCount > 0
     ? { text: 'Enviando mensaje…', className: 'room-chat-description room-chat-status-warning', role: 'status' as const }
     : realtime === 'reconnecting'
@@ -486,5 +527,5 @@ function RoomView({ roomId }: { roomId: string }) {
         : { text: 'Los mensajes son visibles para quienes están en esta sala.', className: 'room-chat-description' };
   if (status === 'loading') return <section className="room-loading-screen" role="status" aria-live="polite"><div className="room-loading-card"><div className="room-loading-mark" aria-hidden="true">S</div><p className="room-loading-eyebrow">TeamSpeak · Sala</p><h1>Preparando tu sala</h1><p className="room-loading-description">Estamos verificando el acceso a la sala.</p><div className="room-loading-progress" aria-hidden="true"><span /></div><p className="room-loading-status">Cargando sala…</p><Link className="button secondary room-loading-back" to="/dashboard">Volver a mis salas</Link></div></section>;
   if (status === 'error' || !room) return <section className="page-panel" role="alert"><PageTitle title="No pudimos abrir la sala" /><p>{notice}</p><Link className="button secondary" to="/dashboard">Volver a mis salas</Link></section>;
-  return <section className="room-shell"><header className="room-header"><div className="room-header-brand"><span aria-hidden="true">S</span><div><h1>{room.name}</h1><p>{room.ownerId === currentUserId ? 'Anfitrión' : 'Miembro'} · ID {room.id}</p></div></div><div className="room-header-status"><span className={`room-live-badge room-live-badge-${realtime}`} role="status">{realtimeLabel}</span>{connected && <span>{participants.length} participantes</span>}</div><div className="room-header-actions"><Link className="media-control media-control-exit" to="/dashboard"><img src="/assets/figma/exit.svg" alt="" /><span>Salir</span></Link></div>{realtime === 'error' && notice && <p role="status" className="room-connection-notice">{notice}</p>}</header><div className="room-content"><div className="video-stage" role="region" aria-labelledby="participants-title"><div className="video-stage-heading"><h2 id="participants-title">Participantes</h2>{sharing && <p className="room-share-badge">Estás compartiendo el estado de tu pantalla</p>}</div><div className="participant-grid">{participants.map((participant, index) => <article className={`participant-card participant-card-${index % 4}${participant.active ? ' participant-card-active' : ''}`} key={participant.id}><div className="participant-avatar" aria-hidden="true">{participant.initials}</div><p className="participant-name">{participant.name}</p><div className="participant-status"><img src={`/assets/figma/mic-${participant.microphone}.svg`} alt={participant.microphone === 'on' ? 'Micrófono activo' : 'Micrófono apagado'} /><img src={`/assets/figma/camera-${participant.camera}.svg`} alt={participant.camera === 'on' ? 'Cámara activa' : 'Cámara apagada'} /></div></article>)}</div><div className="media-controls" aria-label="Controles multimedia"><button className={`media-control${connected && !mic ? ' media-control-av-off' : ''}`} type="button" disabled={!connected} aria-pressed={mic} onClick={() => { const next = !mic; setMic(next); emitMedia(next, camera); }}><img src={mic ? '/assets/figma/mic-on-control.svg' : '/assets/figma/mic-off-control.svg'} alt="" /><span>{mic ? 'Micrófono activo' : 'Micrófono silenciado'}</span></button><button className={`media-control${connected && !camera ? ' media-control-av-off' : ''}`} type="button" disabled={!connected} aria-pressed={camera} onClick={() => { const next = !camera; setCamera(next); emitMedia(mic, next); }}><img src={camera ? '/assets/figma/camera-on-control.svg' : '/assets/figma/camera-off-control.svg'} alt="" /><span>{camera ? 'Cámara activa' : 'Cámara apagada'}</span></button><button className={`media-control${connected && sharing ? ' media-control-sharing' : ''}`} type="button" disabled={!connected} aria-pressed={sharing} onClick={() => { const next = !sharing; setSharing(next); socketRef.current?.emit('screen:state', { sharing: next }); }}><img src="/assets/figma/share.svg" alt="" /><span>{sharing ? 'Dejar de compartir' : 'Compartir pantalla'}</span></button></div></div><aside className="room-side-panel" id="room-side-panel" aria-label="Chat de sala"><div className="room-side-panel-heading"><h2>Chat de la sala</h2><span>{connected ? 'Conectado' : 'Sin conexión'}</span></div><p className={chatStatus.className} role={chatStatus.role}>{chatStatus.text}</p><div className="room-chat-viewport"><div className="room-chat-messages" ref={messagesListRef} role="region" aria-label="Historial de mensajes" tabIndex={0} aria-live="polite" onScroll={handleMessagesScroll}>{nextCursor && historyStatus === 'ready' && !historyError && <button ref={loadMoreRef} className="button secondary room-chat-load-more" type="button" disabled={loadingOlder} onClick={() => void loadOlderMessages()}>{loadingOlder ? 'Cargando mensajes anteriores…' : 'Ver más antiguos'}</button>}{historyStatus === 'loading' && <div className="room-chat-history-status" role="status"><span className="skeleton-block skeleton-shimmer room-chat-skeleton" aria-hidden="true" /><span className="skeleton-block skeleton-shimmer room-chat-skeleton room-chat-skeleton-short" aria-hidden="true" /><p>Cargando mensajes anteriores…</p></div>}{historyError && <div className="room-chat-history-error" role="alert"><p>{historyError}</p><button ref={retryRef} className="button secondary" type="button" disabled={loadingOlder} onClick={() => historyStatus === 'error' ? loadInitialHistory(true) : void loadOlderMessages(true)}>Reintentar</button></div>}{historyStatus === 'ready' && !historyError && messages.length === 0 && <p className="room-chat-empty">Sin mensajes anteriores. Esta sala aún no tiene conversación.</p>}{messages.map(message => <article className="room-chat-message" key={message.id}><div className={`room-chat-avatar room-sidebar-avatar-${message.avatarTone}`} aria-hidden="true">{message.initials}</div><div className="room-chat-message-body"><div className="room-chat-message-meta"><strong>{message.sender}</strong><time>{message.time}</time></div><p>{message.text}</p></div></article>)}</div>{unreadCount > 0 && <button type="button" className="room-chat-new-messages" onClick={jumpToLatest}>{formatNewMessagesLabel(unreadCount)}</button>}</div><form className="room-chat-form" onSubmit={sendMessage}><label className="visually-hidden" htmlFor="room-chat-input">Mensaje para la sala</label><input id="room-chat-input" maxLength={2000} value={draft} onChange={event => setDraft(event.target.value)} placeholder="Escribe un mensaje para la sala…" /><button type="submit" aria-label="Enviar mensaje" disabled={!connected || !draft.trim()}>↑</button></form>{chatError && <p role="alert" className="auth-state">{chatError}</p>}{realtime !== 'error' && notice && <p role="status" className="auth-state">{notice}</p>}{realtime === 'error' && canRetry && <button className="button secondary" type="button" onClick={() => setRetry(value => value + 1)}>Reintentar conexión</button>}</aside></div></section>;
+  return <section className="room-shell"><header className="room-header"><div className="room-header-brand"><span aria-hidden="true">S</span><div><h1>{room.name}</h1><p>{room.ownerId === currentUserId ? 'Anfitrión' : 'Miembro'} · ID {room.id}</p></div></div><div className="room-header-status"><span className={`room-live-badge room-live-badge-${realtime}`} role="status">{realtimeLabel}</span>{connected && <span>{participants.length} participantes</span>}</div><div className="room-header-actions">{room.ownerId === currentUserId && <><button className="media-control room-owner-action" type="button" onClick={() => { setEditName(room.name); setManagementError(''); setManagementDialog('edit'); }}>Editar sala</button><button className="media-control room-owner-action room-owner-action-danger" type="button" onClick={() => { setManagementError(''); setManagementDialog('delete'); }}>Eliminar sala</button></>}<Link className="media-control media-control-exit" to="/dashboard"><img src="/assets/figma/exit.svg" alt="" /><span>Salir</span></Link></div>{realtime === 'error' && notice && <p role="status" className="room-connection-notice">{notice}</p>}</header>{managementDialog === 'edit' && <div className="room-management-dialog-backdrop" role="presentation"><form className="room-management-dialog" role="dialog" aria-modal="true" aria-labelledby="room-edit-title" onSubmit={saveRoomName}><h2 id="room-edit-title">Editar sala</h2><label htmlFor="room-edit-name">Nombre de la sala</label><input id="room-edit-name" autoFocus maxLength={80} value={editName} onChange={event => setEditName(event.target.value)} />{managementError && <p role="alert">{managementError}</p>}<div className="room-management-dialog-actions"><button className="button secondary" type="button" onClick={() => setManagementDialog(null)}>Cancelar</button><button className="button" type="submit" disabled={managingRoom || !editName.trim() || editName.trim() === room.name}>{managingRoom ? 'Guardando…' : 'Guardar cambios'}</button></div></form></div>}{managementDialog === 'delete' && <div className="room-management-dialog-backdrop" role="presentation"><div className="room-management-dialog" role="dialog" aria-modal="true" aria-labelledby="room-delete-title"><h2 id="room-delete-title">¿Eliminar esta sala?</h2><p>Esta acción desconectará a los participantes y no se puede deshacer.</p>{managementError && <p role="alert">{managementError}</p>}<div className="room-management-dialog-actions"><button autoFocus className="button secondary" type="button" onClick={() => setManagementDialog(null)}>Cancelar</button><button className="button room-management-dialog-danger" type="button" disabled={managingRoom} onClick={() => void deleteCurrentRoom()}>{managingRoom ? 'Eliminando…' : 'Eliminar sala'}</button></div></div></div>}<div className="room-content"><div className="video-stage" role="region" aria-labelledby="participants-title"><div className="video-stage-heading"><h2 id="participants-title">Participantes</h2>{sharing && <p className="room-share-badge">Estás compartiendo el estado de tu pantalla</p>}</div><p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true" aria-label="Anuncios de participantes">{participantAnnouncement}</p><div className="participant-grid">{participants.map((participant, index) => <article className={`participant-card participant-card-${index % 4}${participant.active ? ' participant-card-active' : ''}`} key={participant.id}><div className="participant-avatar" aria-hidden="true">{participant.initials}</div><p className="participant-name">{participant.name}</p><div className="participant-status"><img src={`/assets/figma/mic-${participant.microphone}.svg`} alt={participant.microphone === 'on' ? 'Micrófono activo' : 'Micrófono apagado'} /><img src={`/assets/figma/camera-${participant.camera}.svg`} alt={participant.camera === 'on' ? 'Cámara activa' : 'Cámara apagada'} /></div></article>)}</div><div className="media-controls" aria-label="Controles multimedia"><button className={`media-control${connected && !mic ? ' media-control-av-off' : ''}`} type="button" disabled={!connected} aria-pressed={mic} onClick={() => { const next = !mic; setMic(next); emitMedia(next, camera); }}><img src={mic ? '/assets/figma/mic-on-control.svg' : '/assets/figma/mic-off-control.svg'} alt="" /><span>{mic ? 'Micrófono activo' : 'Micrófono silenciado'}</span></button><button className={`media-control${connected && !camera ? ' media-control-av-off' : ''}`} type="button" disabled={!connected} aria-pressed={camera} onClick={() => { const next = !camera; setCamera(next); emitMedia(mic, next); }}><img src={camera ? '/assets/figma/camera-on-control.svg' : '/assets/figma/camera-off-control.svg'} alt="" /><span>{camera ? 'Cámara activa' : 'Cámara apagada'}</span></button><button className={`media-control${connected && sharing ? ' media-control-sharing' : ''}`} type="button" disabled={!connected} aria-pressed={sharing} onClick={() => { const next = !sharing; setSharing(next); socketRef.current?.emit('screen:state', { sharing: next }); }}><img src="/assets/figma/share.svg" alt="" /><span>{sharing ? 'Dejar de compartir' : 'Compartir pantalla'}</span></button></div></div><aside className="room-side-panel" id="room-side-panel" aria-label="Chat de sala"><div className="room-side-panel-heading"><h2>Chat de la sala</h2><span>{connected ? 'Conectado' : 'Sin conexión'}</span></div><p className={chatStatus.className} role={chatStatus.role}>{chatStatus.text}</p><p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true" aria-label="Anuncios del chat">{chatAnnouncement}</p><div className="room-chat-viewport"><div className="room-chat-messages" ref={messagesListRef} role="region" aria-label="Historial de mensajes" tabIndex={0} onScroll={handleMessagesScroll}>{nextCursor && historyStatus === 'ready' && !historyError && <button ref={loadMoreRef} className="button secondary room-chat-load-more" type="button" disabled={loadingOlder} onClick={() => void loadOlderMessages()}>{loadingOlder ? 'Cargando mensajes anteriores…' : 'Ver más antiguos'}</button>}{historyStatus === 'loading' && <div className="room-chat-history-status" role="status"><span className="skeleton-block skeleton-shimmer room-chat-skeleton" aria-hidden="true" /><span className="skeleton-block skeleton-shimmer room-chat-skeleton room-chat-skeleton-short" aria-hidden="true" /><p>Cargando mensajes anteriores…</p></div>}{historyError && <div className="room-chat-history-error" role="alert"><p>{historyError}</p><button ref={retryRef} className="button secondary" type="button" disabled={loadingOlder} onClick={() => historyStatus === 'error' ? loadInitialHistory(true) : void loadOlderMessages(true)}>Reintentar</button></div>}{historyStatus === 'ready' && !historyError && messages.length === 0 && <p className="room-chat-empty">Sin mensajes anteriores. Esta sala aún no tiene conversación.</p>}{messages.map(message => <article className="room-chat-message" key={message.id}><div className={`room-chat-avatar room-sidebar-avatar-${message.avatarTone}`} aria-hidden="true">{message.initials}</div><div className="room-chat-message-body"><div className="room-chat-message-meta"><strong>{message.sender}</strong><time>{message.time}</time></div><p>{message.text}</p></div></article>)}</div>{unreadCount > 0 && <button type="button" className="room-chat-new-messages" onClick={jumpToLatest}>{formatNewMessagesLabel(unreadCount)}</button>}</div><form className="room-chat-form" onSubmit={sendMessage}><label className="visually-hidden" htmlFor="room-chat-input">Mensaje para la sala</label><input id="room-chat-input" maxLength={2000} value={draft} onChange={event => setDraft(event.target.value)} placeholder="Escribe un mensaje para la sala…" /><button type="submit" aria-label="Enviar mensaje" disabled={!connected || !draft.trim()}>↑</button></form>{chatError && <p role="alert" className="auth-state">{chatError}</p>}{realtime !== 'error' && notice && <p role="status" className="auth-state">{notice}</p>}{realtime === 'error' && canRetry && <button className="button secondary" type="button" onClick={() => setRetry(value => value + 1)}>Reintentar conexión</button>}</aside></div></section>;
 }
