@@ -241,7 +241,7 @@ test('interior de sala: conexión en tiempo real, anfitrión, participantes, con
     emit('room:participant-joined', { userId: 'laura-02' });
     emit('room:participant-joined', { userId: 'diego-03' });
   });
-  await expect(page.getByText('4 participantes')).toBeVisible();
+  await expect(page.getByText('4 participantes', { exact: true })).toBeVisible();
   await expect(page.locator('.participant-card')).toHaveCount(4);
   await captureAllViewports(page, info, mobile, 'interior-confirmado');
   await captureAllViewports(page, info, mobile, 'interior-base');
@@ -472,7 +472,7 @@ test('US-10 chat en tiempo real: auto-scroll, mensajes nuevos al leer historial,
       createdAt: '2026-11-18T14:30:00.000Z',
     });
   });
-  await expect(page.getByText('Mensaje en vivo al final.')).toBeVisible();
+  await expect(page.getByText('Mensaje en vivo al final.', { exact: true })).toBeVisible();
   await expect.poll(() => list.evaluate(el => Math.abs(el.scrollHeight - (el.scrollTop + el.clientHeight)) <= 24)).toBe(true);
   await expect(page.getByRole('button', { name: /Mensajes nuevos/ })).toHaveCount(0);
 
