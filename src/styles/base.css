@@ -16,8 +16,7 @@
   button,
   label,
   .brand,
-  nav,
-  .button {
+  nav {
     font-family: 'Inter Variable', sans-serif;
   }
 
@@ -43,9 +42,13 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  button:not(:disabled),
-  .button {
+  button:not(:disabled) {
     cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: .6;
   }
 
   :focus-visible {

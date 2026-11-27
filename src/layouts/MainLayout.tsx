@@ -28,5 +28,5 @@ export function MainLayout() {
       : isPanelPage
         ? 'main-content mx-auto w-full max-w-[1440px] flex-1 px-5 pt-6 pb-9 md:px-[5%] md:pt-8 md:pb-6 focus:outline-none focus:shadow-none'
         : 'main-content mx-auto w-full max-w-[1440px] flex-1 px-5 pt-6 pb-9 md:px-[5%] md:pt-9 md:pb-12 focus:outline-none focus:shadow-none';
-  return <div className={`${isAuthPage ? 'min-h-dvh' : 'min-h-screen'} flex flex-col bg-canvas${isDashboardPage ? ' min-[1101px]:h-screen min-[1101px]:min-h-0 min-[1101px]:overflow-hidden' : isPanelPage ? ' panel-shell' : ''}${isRoomPage ? ' room-app-shell' : ''}`}><a className="skip-link" href="#main-content">Saltar al contenido</a><Header /><main ref={main} className={mainClass} id="main-content" tabIndex={-1}><AccountDeletionProvider><Outlet /></AccountDeletionProvider></main><Footer /></div>;
+  return <div className={`${isAuthPage ? 'min-h-dvh' : 'min-h-screen'} flex flex-col bg-canvas${isDashboardPage ? ' min-[1101px]:h-screen min-[1101px]:min-h-0 min-[1101px]:overflow-hidden' : isPanelPage ? ' panel-shell' : ''}${isRoomPage ? ' [&>.site-header]:hidden [&>.site-footer]:hidden' : ''}`}><a className="skip-link" href="#main-content">Saltar al contenido</a><Header /><main ref={main} className={mainClass} id="main-content" tabIndex={-1}><AccountDeletionProvider><Outlet /></AccountDeletionProvider></main><Footer /></div>;
 }

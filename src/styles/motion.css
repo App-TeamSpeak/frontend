@@ -31,74 +31,17 @@
   }
 }
 
-/* Shared Stage 2 microinteraction rules (never animate outline, outline-offset, or focus box-shadow) */
-.button,
-.room-management-dialog-danger,
-.room-chat-form button,
-.room-chat-new-messages,
-.shared-screen-return {
-  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
-}
-
-.room-side-panel-close,
-.form-field input,
-.form-field select,
-.room-chat-form input {
-  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
-}
-
-.button:active:not(:disabled),
-.room-chat-form button:active:not(:disabled),
-.shared-screen-return:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.room-chat-new-messages:active:not(:disabled) {
-  transform: translateX(-50%) translateY(1px);
-}
-
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-fast: 0.01ms;
     --motion-base: 0.01ms;
   }
 
-  html .skeleton-shimmer,
-  html .room-loading-progress span,
-  html .room-view-menu {
+  html .skeleton-shimmer {
     animation: none;
   }
 
   html .skeleton-block {
     background: #263449;
-  }
-
-  html .room-loading-progress span {
-    width: 100%;
-  }
-
-  html .media-control,
-  html .button,
-  html .room-management-dialog-danger,
-  html .room-chat-form button,
-  html .room-chat-new-messages,
-  html .shared-screen-return,
-  html .room-side-panel-close,
-  html .form-field input,
-  html .form-field select,
-  html .room-chat-form input,
-  html .room-view-menu button {
-    transition: none;
-  }
-
-  html .media-control:active:not(:disabled),
-  html .button:active:not(:disabled),
-  html .room-chat-form button:active:not(:disabled),
-  html .shared-screen-return:active:not(:disabled) {
-    transform: none;
-  }
-
-  html .room-chat-new-messages:active:not(:disabled) {
-    transform: translateX(-50%);
   }
 }

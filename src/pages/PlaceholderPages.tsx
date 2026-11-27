@@ -243,9 +243,11 @@ export function AccessibilityPage() {
     </div>
   </section>;
 }
+const primaryLinkBtn = 'inline-flex min-h-[48px] items-center justify-center gap-3 rounded-[10px] border border-link bg-primary px-5 py-3 font-heading text-sm font-semibold text-text no-underline transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none hover:bg-primary-hover active:translate-y-px motion-reduce:active:translate-y-0';
+const secondaryLinkBtn = 'inline-flex min-h-[48px] items-center justify-center gap-3 rounded-[10px] border border-border-strong bg-surface px-5 py-3 font-heading text-sm font-semibold text-link-strong no-underline transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none hover:bg-subtle active:translate-y-px motion-reduce:active:translate-y-0';
 export function LoggedOutPage() {
   return <AuthFrame title="Sesión cerrada" description="Saliste de tu cuenta de TeamSpeak.">
-    <Link className="button primary auth-submit mt-[14px] h-auto min-h-[48px] w-full border-transparent bg-primary" to="/login">Volver al ingreso</Link>
+    <Link className={`${primaryLinkBtn} mt-[14px] w-full border-transparent`} to="/login">Volver al ingreso</Link>
   </AuthFrame>;
 }
 export function NotFoundPage() {
@@ -253,9 +255,9 @@ export function NotFoundPage() {
     <p className="mb-3 font-heading text-[13px] font-semibold uppercase tracking-[0.16em] text-link">Error 404</p>
     <PageTitle title="Página no encontrada" />
     <p className="mt-2 text-base leading-6 text-muted">La dirección que buscas no existe en TeamSpeak.</p>
-    <div className="mt-6 flex flex-wrap gap-3 max-md:[&_.button]:w-full">
-      <Link className="button primary" to="/login">Volver al ingreso</Link>
-      <Link className="button secondary" to="/ayuda">Centro de ayuda</Link>
+    <div className="mt-6 flex flex-wrap gap-3 max-md:[&_a]:w-full">
+      <Link className={primaryLinkBtn} to="/login">Volver al ingreso</Link>
+      <Link className={secondaryLinkBtn} to="/ayuda">Centro de ayuda</Link>
     </div>
   </section>;
 }

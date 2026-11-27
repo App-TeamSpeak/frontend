@@ -651,3 +651,219 @@ test('Fase 4B conserva la geometría visual de creación, copia de ID y diálogo
   expect(Math.abs(jsAfterBox!.y - jsBox!.y)).toBeLessThanOrEqual(1);
   await joinCancel.click();
 });
+
+test('Fase 5A conserva la estructura, encabezado y layout responsive de la sala', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await stubRooms(page);
+
+  let releaseRoom!: () => void;
+  let mode: 'hold' | 'error' | 'ready' = 'hold';
+  await page.route(`**/api/rooms/${room.id}`, async route => {
+    if (mode === 'hold') {
+      await new Promise<void>(resolve => { releaseRoom = resolve; });
+    }
+    if (mode === 'error') {
+      await route.fulfill({ status: 404, json: { success: false, code: 'ROOM_NOT_FOUND', message: 'Sala no encontrada' } });
+      return;
+    }
+    await route.fulfill({ json: { success: true, data: room } });
+  });
+
+  await page.goto(`/salas/${room.id}`);
+  await expect(page.getByRole('heading', { name: 'Preparando tu sala' })).toBeVisible();
+  const loadingBox = await page.getByRole('heading', { name: 'Preparando tu sala' }).locator('..').boundingBox();
+  expect(loadingBox).not.toBeNull();
+  expect(loadingBox!.width).toBeLessThanOrEqual(440);
+
+  mode = 'error';
+  releaseRoom();
+  await expect(page.getByRole('heading', { name: 'No pudimos abrir la sala' })).toBeVisible();
+  const backLink = page.getByRole('link', { name: 'Volver a mis salas' });
+  const backBox = await backLink.boundingBox();
+  expect(backBox).not.toBeNull();
+  expect(backBox!.height).toBeGreaterThanOrEqual(44);
+
+  mode = 'ready';
+  await page.goto(`/salas/${room.id}`);
+  const header = page.locator('.room-header');
+  const exit = header.getByRole('link', { name: 'Salir' });
+  await expect(header).toBeVisible();
+  const [headerBox, exitBox] = await Promise.all([header.boundingBox(), exit.boundingBox()]);
+  expect(headerBox).not.toBeNull();
+  expect(exitBox).not.toBeNull();
+  expect(headerBox!.height).toBeGreaterThanOrEqual(72);
+  expect(Math.round(exitBox!.width)).toBe(80);
+  expect(Math.round(exitBox!.height)).toBe(36);
+
+  const contentDir = await page.locator('.room-content').evaluate(el => getComputedStyle(el).flexDirection);
+  expect(contentDir).toBe(mobile ? 'column' : 'row');
+
+  if (mobile) {
+    const brandBox = await header.locator('div').first().boundingBox();
+    const editBox = await header.getByRole('button', { name: 'Editar sala' }).boundingBox();
+    expect(brandBox).not.toBeNull();
+    expect(editBox).not.toBeNull();
+    expect(Math.abs(editBox!.x - brandBox!.x)).toBeLessThanOrEqual(2);
+  }
+});
+
+test('reutiliza el diálogo consistente de edición de sala dentro de la sala', async ({ page }) => {
+  await stubRooms(page);
+  await page.route(`**/api/rooms/${room.roomId}/messages*`, route => route.fulfill({ json: { success: true, data: { messages: [], nextCursor: null } } }));
+
+  await page.goto(`/salas/${room.roomId}`);
+  await page.getByRole('button', { name: 'Editar sala' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Editar sala' });
+  await expect(dialog).toBeVisible();
+  const nameInput = dialog.getByLabel('Nombre de la sala');
+  const idInput = dialog.getByLabel('ID de la sala');
+  await expect(idInput).toHaveValue(`${room.roomId}  ·  No editable`);
+  await expect(idInput).toHaveAttribute('readonly', '');
+
+  const inputBox = await nameInput.boundingBox();
+  expect(inputBox).not.toBeNull();
+  expect(Math.round(inputBox!.height)).toBe(52);
+});
+
+test('Fase 5B.1 conserva las tarjetas de participantes, avatares y distribución responsive', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await stubRooms(page);
+  await page.route(`**/api/rooms/${room.roomId}/messages*`, route => route.fulfill({ json: { success: true, data: { messages: [], nextCursor: null } } }));
+
+  await page.goto(`/salas/${room.roomId}`);
+  await page.waitForFunction(() => Boolean(document.querySelector('.room-header')));
+  await page.evaluate(() => window.dispatchEvent(new Event('us06-confirm-join')));
+  const firstCard = page.locator('.participant-card').first();
+  const avatar = firstCard.locator('.participant-avatar');
+  await expect(firstCard).toBeVisible();
+  await expect(avatar).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const grid = document.querySelector('.participant-card')?.parentElement;
+    const card = document.querySelector('.participant-card');
+    const av = document.querySelector('.participant-avatar');
+    const gridStyle = grid ? getComputedStyle(grid) : null;
+    const cardStyle = card ? getComputedStyle(card) : null;
+    const avRect = av ? av.getBoundingClientRect() : null;
+    return {
+      columns: gridStyle?.gridTemplateColumns.trim().split(/\s+/).length ?? 0,
+      minHeight: cardStyle?.minHeight ?? '',
+      avatarW: avRect ? Math.round(avRect.width) : 0,
+      avatarH: avRect ? Math.round(avRect.height) : 0,
+    };
+  });
+
+  expect(metrics.avatarW).toBe(64);
+  expect(metrics.avatarH).toBe(64);
+  expect(metrics.columns).toBe(mobile ? 1 : 2);
+  expect(metrics.minHeight).toBe(mobile ? '168px' : '244px');
+});
+
+test('Fase 5B.2 conserva los controles audiovisuales, estados y badge de pantalla compartida', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await stubRooms(page);
+  await page.route(`**/api/rooms/${room.roomId}/messages*`, route => route.fulfill({ json: { success: true, data: { messages: [], nextCursor: null } } }));
+
+  await page.goto(`/salas/${room.roomId}`);
+  const controls = page.getByLabel('Controles multimedia');
+  const micButton = controls.getByRole('button', { name: 'Micrófono silenciado' });
+  const camButton = controls.getByRole('button', { name: 'Cámara apagada' });
+  const shareButton = controls.getByRole('button', { name: 'Compartir pantalla' });
+
+  await expect(micButton).toBeDisabled();
+  expect(await micButton.evaluate(el => getComputedStyle(el).borderStyle)).toBe('dashed');
+
+  await page.evaluate(() => window.dispatchEvent(new Event('us06-confirm-join')));
+  await expect(micButton).toBeEnabled();
+  expect(await micButton.evaluate(el => getComputedStyle(el).borderStyle)).toBe('solid');
+
+  const [controlsStyle, micBox, camBox, shareBox] = await Promise.all([
+    controls.evaluate(el => ({ position: getComputedStyle(el).position, flexWrap: getComputedStyle(el).flexWrap })),
+    micButton.boundingBox(),
+    camButton.boundingBox(),
+    shareButton.boundingBox(),
+  ]);
+  expect(controlsStyle.position).toBe(mobile ? 'static' : 'absolute');
+  if (mobile) {
+    expect(controlsStyle.flexWrap).toBe('wrap');
+  } else {
+    expect(Math.round(micBox!.width)).toBe(174);
+    expect(Math.round(micBox!.height)).toBe(52);
+    expect(Math.round(camBox!.width)).toBe(152);
+    expect(Math.round(shareBox!.width)).toBe(162);
+  }
+
+  await shareButton.click();
+  const stopShareButton = controls.getByRole('button', { name: 'Dejar de compartir' });
+  await expect(stopShareButton).toHaveAttribute('aria-pressed', 'true');
+  const shareBadge = page.getByText('Estás compartiendo el estado de tu pantalla');
+  await expect(shareBadge).toBeVisible();
+  expect(await shareBadge.evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(38, 59, 91)');
+});
+
+test('Fase 5C.1 conserva el panel lateral, encabezado y presentación de mensajes del chat', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await stubRooms(page);
+  await page.route(`**/api/rooms/${room.roomId}/messages*`, route => route.fulfill({
+    json: {
+      success: true,
+      data: [{ id: 'm1', roomId: room.roomId, authorId: 'u2', authorName: 'Laura Díaz', text: 'Hola equipo', createdAt: '2026-01-01T12:00:00Z' }],
+    },
+  }));
+
+  await page.goto(`/salas/${room.roomId}`);
+  const panel = page.locator('#room-side-panel');
+  const message = panel.locator('.room-chat-message').first();
+  const avatar = message.locator('.room-chat-avatar');
+  await expect(panel).toBeVisible();
+  await expect(message).toBeVisible();
+
+  const [panelBox, panelStyle, avatarBox] = await Promise.all([
+    panel.boundingBox(),
+    panel.evaluate(el => ({ minHeight: getComputedStyle(el).minHeight, paddingLeft: getComputedStyle(el).paddingLeft })),
+    avatar.boundingBox(),
+  ]);
+
+  expect(Math.round(avatarBox!.width)).toBe(30);
+  expect(Math.round(avatarBox!.height)).toBe(30);
+  if (mobile) {
+    expect(panelStyle.minHeight).toBe('360px');
+    expect(panelStyle.paddingLeft).toBe('16px');
+  } else {
+    expect(Math.round(panelBox!.width)).toBe(468);
+    expect(panelBox!.height).toBeGreaterThanOrEqual(680);
+  }
+});
+
+test('Fase 5C.2 conserva el formulario, historial, indicador de mensajes nuevos y estados del chat', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await stubRooms(page);
+  await page.route(`**/api/rooms/${room.roomId}/messages*`, route => route.fulfill({
+    status: 503,
+    json: { success: false, code: 'FIRESTORE_UNAVAILABLE', message: 'No disponible' },
+  }));
+
+  await page.goto(`/salas/${room.roomId}`);
+  const panel = page.locator('#room-side-panel');
+  const retry = panel.getByRole('button', { name: 'Reintentar' });
+  await expect(retry).toBeVisible();
+  const errorBoxBg = await retry.locator('..').evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(errorBoxBg).toBe('rgb(58, 32, 43)');
+
+  const input = panel.getByLabel('Mensaje para la sala');
+  const send = panel.getByRole('button', { name: 'Enviar mensaje' });
+  const [inputBox, sendBox] = await Promise.all([input.boundingBox(), send.boundingBox()]);
+  expect(Math.round(inputBox!.height)).toBe(52);
+  expect(Math.round(sendBox!.width)).toBe(48);
+  expect(Math.round(sendBox!.height)).toBe(44);
+  await expect(send).toBeDisabled();
+
+  await page.setViewportSize({ width: 320, height: 640 });
+  const sendMobileBox = await send.boundingBox();
+  expect(sendMobileBox!.width).toBeGreaterThanOrEqual(240);
+});

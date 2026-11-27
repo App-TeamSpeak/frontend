@@ -259,7 +259,7 @@ function ProfileContent({ uid }: { uid: string }) {
         <h2 id="profile-heading" ref={heading} tabIndex={-1}>{editing && !saved ? 'Editar información personal' : 'Información personal'}</h2>
         {!draft && identity}
         {query.status === 'loading' && <div className="my-7 text-muted" role="status">
-          <p className="visually-hidden">Cargando perfil…</p>
+          <p className="sr-only">Cargando perfil…</p>
           <div className="mt-3 grid gap-6 max-[900px]:gap-5 [&>span]:block [&>span]:h-12 max-[900px]:[&>span]:h-14 [&>span]:rounded-[10px] [&>span]:bg-control-surface" aria-hidden="true"><span /><span /><span /></div>
         </div>}
         {query.status === 'error' && <>

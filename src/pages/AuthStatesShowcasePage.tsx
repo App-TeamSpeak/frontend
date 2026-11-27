@@ -16,11 +16,18 @@ const stateContent = {
   },
 } satisfies Record<AuthShowcaseContext, Record<AuthShowcaseState, { badge: string; title: string; description: string }>>;
 
+const stateStyles: Record<AuthShowcaseState, { card: string; badge: string; title: string }> = {
+  loading: { card: 'border-[#334155]', badge: 'bg-[#dbeafe] text-[#5c8dff]', title: 'text-text' },
+  error: { card: 'border-[#fecaca]', badge: 'bg-[#fee2e2] text-[#991b1b]', title: 'text-error' },
+  success: { card: 'border-[#a7f3d0]', badge: 'bg-[#d1fae5] text-[#065f46]', title: 'text-success' },
+};
+
 export function AuthStateCard({ context, state }: { context: AuthShowcaseContext; state: AuthShowcaseState }) {
   const content = stateContent[context][state];
-  return <article className={`auth-state-${state} m-0 min-h-[132px] overflow-hidden rounded-[14px] border border-border bg-surface px-[19px] py-[17px]`} aria-label={`${context === 'login' ? 'Login' : 'Registro'} · ${content.badge}`}>
-    <span className="auth-state-badge min-h-[28px]">{content.badge}</span>
-    <strong className="mt-3 block font-heading text-[15px] font-semibold">{content.title}</strong>
+  const style = stateStyles[state];
+  return <article className={`m-0 min-h-[132px] overflow-hidden rounded-[14px] border bg-surface px-[19px] py-[17px] ${style.card}`} aria-label={`${context === 'login' ? 'Login' : 'Registro'} · ${content.badge}`}>
+    <span className={`inline-flex min-h-[28px] items-center rounded-[14px] px-3 font-heading text-xs font-medium ${style.badge}`}>{content.badge}</span>
+    <strong className={`mt-3 block font-heading text-[15px] font-semibold ${style.title}`}>{content.title}</strong>
     <p className="mt-[7px] text-xs text-muted">{content.description}</p>
   </article>;
 }

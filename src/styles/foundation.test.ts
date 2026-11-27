@@ -228,6 +228,159 @@ describe('Tailwind v4 foundation (Fase 0A)', () => {
     }
   });
 
+  it('removes migrated Fase 5A room shell, header, and loading CSS blocks from index.css', () => {
+    const indexCss = readFileSync(indexCssPath, 'utf8');
+
+    for (const removed of [
+      /^\.room-app-shell\s*\{/m,
+      /^\.room-loading-screen\s*\{/m,
+      /^\.room-loading-card\s*\{/m,
+      /^\.room-shell\s*\{/m,
+      /^\.room-header\s*\{/m,
+      /^\.room-header-brand\s*\{/m,
+      /^\.room-header-status\s*\{/m,
+      /^\.room-live-badge\s*\{/m,
+      /^\.room-connection-notice\s*\{/m,
+      /^\.room-header-actions\s*\{/m,
+      /^\.room-owner-action\s*\{/m,
+      /^\.room-content\s*\{/m,
+      /^\.media-control-exit\s*\{/m,
+    ]) {
+      expect(indexCss).not.toMatch(removed);
+    }
+  });
+
+  it('removes legacy room-management-dialog CSS blocks from index.css after reusing RoomManagementDialog', () => {
+    const indexCss = readFileSync(indexCssPath, 'utf8');
+
+    for (const removed of [
+      /^\.room-management-dialog-backdrop\s*\{/m,
+      /^\.room-management-dialog\s*\{/m,
+      /^\.room-management-dialog-actions\s*\{/m,
+      /^\.room-management-dialog-danger\s*\{/m,
+      /^\.room-management-dialog\s*>\s*input\s*\{/m,
+    ]) {
+      expect(indexCss).not.toMatch(removed);
+    }
+  });
+
+  it('removes migrated Fase 5B.1 participant grid and card CSS blocks from index.css', () => {
+    const indexCss = readFileSync(indexCssPath, 'utf8');
+
+    for (const removed of [
+      /^\.video-stage\s*\{/m,
+      /^\.video-stage-heading\s*\{/m,
+      /^\.participant-grid\s*\{/m,
+      /^\.participant-card\s*\{/m,
+      /^\.participant-card-0\s*\{/m,
+      /^\.participant-card-active\s*\{/m,
+      /^\.participant-avatar\s*\{/m,
+      /^\.participant-name\s*\{/m,
+      /^\.participant-status\s*\{/m,
+    ]) {
+      expect(indexCss).not.toMatch(removed);
+    }
+  });
+
+  it('removes migrated Fase 5B.2 AV controls and screen-share CSS blocks from index.css', () => {
+    const indexCss = readFileSync(indexCssPath, 'utf8');
+
+    for (const removed of [
+      /^\.media-controls\s*\{/m,
+      /^\.media-control\s*\{/m,
+      /^\.media-control-av-off\s*\{/m,
+      /^\.media-control-sharing\s*\{/m,
+      /^\.room-share-badge\s*\{/m,
+      /^\.room-screen-share-stage\s*\{/m,
+      /^\.shared-screen-header\s*\{/m,
+      /^\.shared-screen-layout\s*\{/m,
+      /^\.shared-screen-canvas\s*\{/m,
+      /^\.shared-screen-participants\s*\{/m,
+      /^\.shared-screen-thumbnail\s*\{/m,
+      /^\.shared-screen-more\s*\{/m,
+    ]) {
+      expect(indexCss).not.toMatch(removed);
+    }
+  });
+
+  it('removes migrated Fase 5C.1 side panel and chat message CSS blocks from index.css', () => {
+    const indexCss = readFileSync(indexCssPath, 'utf8');
+
+    for (const removed of [
+      /^\.room-side-panel\s*\{/m,
+      /^\.room-side-panel-heading\s*\{/m,
+      /^\.room-chat-description\s*\{/m,
+      /^\.room-chat-viewport\s*\{/m,
+      /^\.room-chat-messages\s*\{/m,
+      /^\.room-chat-empty\s*\{/m,
+      /^\.room-chat-message\s*\{/m,
+      /^\.room-chat-avatar\s*\{/m,
+      /^\.room-chat-message-body\s*\{/m,
+      /^\.room-chat-message-meta\s*\{/m,
+    ]) {
+      expect(indexCss).not.toMatch(removed);
+    }
+  });
+
+  it('removes migrated Fase 5C.2 chat form, history, and status CSS blocks from index.css', () => {
+    const indexCss = readFileSync(indexCssPath, 'utf8');
+
+    for (const removed of [
+      /^\.room-chat-new-messages\s*\{/m,
+      /^\.room-chat-load-more\s*\{/m,
+      /^\.room-chat-history-status\s*\{/m,
+      /^\.room-chat-skeleton\s*\{/m,
+      /^\.room-chat-history-error\s*\{/m,
+      /^\.room-chat-form\s*\{/m,
+      /^\.room-side-panel>\.auth-state\s*\{/m,
+      /^\.room-side-panel>\.button\s*\{/m,
+    ]) {
+      expect(indexCss).not.toMatch(removed);
+    }
+  });
+
+  it('closes Fase 6A by removing all remaining legacy CSS blocks from index.css and orphaned selectors from motion.css', () => {
+    const indexCss = readFileSync(indexCssPath, 'utf8');
+    const baseCss = readFileSync(resolve(stylesDir, 'base.css'), 'utf8');
+    const motionCss = readFileSync(resolve(stylesDir, 'motion.css'), 'utf8');
+
+    for (const removed of [
+      /^\.page-panel\s*\{/m,
+      /^\.button\s*\{/m,
+      /^\.primary\s*\{/m,
+      /^\.secondary\s*\{/m,
+      /^\.form-field\s*\{/m,
+      /^\.field-error\s*\{/m,
+      /^\.auth-state\s*\{/m,
+      /^\.empty-room\s*\{/m,
+      /^\.private-note\s*\{/m,
+      /^\.header-logout\s*\{/m,
+      /^\.room-panel-toggles\s*\{/m,
+      /^\.room-footer-note\s*\{/m,
+      /^\.room-view-menu\s*\{/m,
+      /^\.visually-hidden\s*\{/m,
+      /^button:disabled\s*\{/m,
+    ]) {
+      expect(indexCss).not.toMatch(removed);
+    }
+
+    expect(baseCss).toMatch(/button:disabled\s*\{/);
+
+    for (const orphaned of [
+      '.room-management-dialog-danger',
+      '.room-chat-form',
+      '.room-chat-new-messages',
+      '.shared-screen-return',
+      '.room-side-panel-close',
+      '.form-field',
+      '.room-loading-progress',
+      '.room-view-menu',
+      '.media-control',
+    ]) {
+      expect(motionCss).not.toContain(orphaned);
+    }
+  });
+
   it('centralizes keyframes and reduced-motion rules in motion.css without leaving duplicates in index.css', () => {
     const motionPath = resolve(stylesDir, 'motion.css');
     expect(existsSync(motionPath)).toBe(true);
