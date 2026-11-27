@@ -458,3 +458,196 @@ test('US-06 mantiene legibles las tarjetas con nombres y códigos largos', async
     await page.screenshot({ path: info.outputPath(`dashboard-responsivo-${width}x${height}.png`), scale: 'css' });
   }
 });
+
+test('US-06 conserva la geometría visual de /salas/unirse y JoinRoomForm', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  const viewport = mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+  await page.setViewportSize(viewport);
+  await stubRooms(page);
+
+  let releaseJoin!: () => void;
+  await page.route('**/api/rooms/*/join', async route => {
+    await new Promise<void>(resolve => { releaseJoin = resolve; });
+    await route.fulfill({ json: { success: true, data: room } });
+  });
+
+  await page.goto('/salas/unirse');
+  const section = page.locator('.room-join-page');
+  await expect(section).toBeVisible();
+  const label = page.locator('label[for="room-entry"]');
+  const input = page.getByLabel('ID de la sala');
+  const cancel = page.getByRole('link', { name: 'Cancelar' });
+  const submit = page.getByRole('button', { name: 'Unirse a la sala' });
+
+  const [sectionBox, labelBox, inputBox, cancelBox, submitBox] = await Promise.all([
+    section.boundingBox(),
+    label.boundingBox(),
+    input.boundingBox(),
+    cancel.boundingBox(),
+    submit.boundingBox(),
+  ]);
+  expect(sectionBox).not.toBeNull();
+  expect(labelBox).not.toBeNull();
+  expect(inputBox).not.toBeNull();
+  expect(cancelBox).not.toBeNull();
+  expect(submitBox).not.toBeNull();
+
+  if (!mobile) {
+    expect(sectionBox!.width).toBeLessThanOrEqual(500);
+    expect(Math.abs((sectionBox!.x + sectionBox!.width / 2) - (viewport.width / 2))).toBeLessThanOrEqual(4);
+    expect(Math.round(inputBox!.height)).toBe(54);
+    expect(Math.round(cancelBox!.width)).toBe(130);
+    expect(Math.round(submitBox!.width)).toBe(164);
+  } else {
+    expect(Math.round(inputBox!.height)).toBe(51);
+  }
+  expect(inputBox!.y - (labelBox!.y + labelBox!.height)).toBeLessThanOrEqual(10);
+  expect(Math.abs(cancelBox!.y - submitBox!.y)).toBeLessThanOrEqual(2);
+  expect(submitBox!.x).toBeGreaterThan(cancelBox!.x + cancelBox!.width);
+
+  await submit.click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  expect(await input.evaluate(el => getComputedStyle(el).borderTopColor)).toBe('rgb(248, 113, 113)');
+
+  await input.fill('CALC-8F2K');
+  await submit.click();
+  await expect(submit).toBeDisabled();
+  await expect(page.getByRole('status')).toContainText('Uniéndote a la sala…');
+  releaseJoin();
+  await expect(page).toHaveURL(/\/salas\/synthetic-room-id$/);
+});
+
+test('Fase 4A conserva la geometría visual del dashboard, tarjetas y estados', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  const viewport = mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+  await page.setViewportSize(viewport);
+  await stubRooms(page);
+
+  let mode: 'hold' | 'error' | 'empty' | 'one' = 'hold';
+  let releaseLoad!: () => void;
+  await page.route('**/api/rooms', async route => {
+    if (mode === 'hold') {
+      await new Promise<void>(resolve => { releaseLoad = resolve; });
+      await route.fulfill({ status: 503, json: { success: false, code: 'FIRESTORE_UNAVAILABLE', message: 'Error sintético' } });
+      return;
+    }
+    if (mode === 'error') {
+      await route.fulfill({ status: 503, json: { success: false, code: 'FIRESTORE_UNAVAILABLE', message: 'Error sintético' } });
+      return;
+    }
+    if (mode === 'empty') {
+      await route.fulfill({ json: { success: true, data: [] } });
+      return;
+    }
+    await route.fulfill({ json: { success: true, data: [room] } });
+  });
+
+  await page.goto('/dashboard');
+  await expect(page.getByText('Estamos obteniendo tus salas.')).toBeVisible();
+  const visibleSkeletons = await page.locator('.room-card-skeleton').evaluateAll(
+    nodes => nodes.filter(node => getComputedStyle(node).display !== 'none').length,
+  );
+  expect(visibleSkeletons).toBe(mobile ? 2 : 4);
+  const skeletonBorder = await page.locator('.room-card-skeleton').first().evaluate(node => ({
+    width: getComputedStyle(node).borderTopWidth,
+    color: getComputedStyle(node).borderTopColor,
+  }));
+  expect(skeletonBorder).toEqual({ width: '1px', color: 'rgb(100, 116, 139)' });
+
+  mode = 'error';
+  releaseLoad();
+  const retry = page.getByRole('button', { name: 'Reintentar' });
+  await expect(retry).toBeVisible();
+  const retryBox = await retry.boundingBox();
+  expect(retryBox).not.toBeNull();
+  if (!mobile) expect(Math.round(retryBox!.width)).toBe(168);
+
+  mode = 'empty';
+  await retry.click();
+  const createFirst = page.getByRole('button', { name: 'Crear mi primera sala' });
+  await expect(createFirst).toBeVisible();
+  const createFirstBox = await createFirst.boundingBox();
+  expect(createFirstBox).not.toBeNull();
+  if (!mobile) expect(Math.round(createFirstBox!.width)).toBe(360);
+
+  mode = 'one';
+  await page.goto('/dashboard');
+  const card = page.locator('.room-card');
+  await expect(card).toHaveCount(1);
+  const cardBox = await card.boundingBox();
+  expect(cardBox).not.toBeNull();
+  if (!mobile) expect(cardBox!.width).toBeLessThanOrEqual(524);
+  const idTypography = await card.locator('.room-card-id').evaluate(node => ({
+    fontSize: getComputedStyle(node).fontSize,
+    lineHeight: getComputedStyle(node).lineHeight,
+  }));
+  expect(idTypography).toEqual({ fontSize: '12px', lineHeight: '16px' });
+});
+
+test('Fase 4B conserva la geometría visual de creación, copia de ID y diálogos de gestión', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await stubRooms(page);
+  await page.route('**/api/rooms', async route => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({ status: 201, json: { success: true, data: room } });
+      return;
+    }
+    await route.fulfill({ json: { success: true, data: [room] } });
+  });
+
+  await page.goto('/dashboard');
+  const copyBtn = page.getByRole('button', { name: 'Copiar ID' }).first();
+  const copyBox = await copyBtn.boundingBox();
+  expect(copyBox).not.toBeNull();
+  expect(Math.round(copyBox!.width)).toBe(28);
+  expect(Math.round(copyBox!.height)).toBe(28);
+
+  await page.getByRole('button', { name: '＋ Crear sala' }).click();
+  const createDialog = page.getByRole('dialog', { name: 'Crear sala' });
+  await expect(createDialog).toBeVisible();
+  const backdropBg = await createDialog.evaluate(el => getComputedStyle(el, '::backdrop').backgroundColor);
+  expect(backdropBg).toBe('rgba(2, 6, 23, 0.72)');
+  const createBox = await createDialog.boundingBox();
+  expect(createBox).not.toBeNull();
+  expect(createBox!.width).toBeLessThanOrEqual(mobile ? 358 : 500);
+  await createDialog.getByRole('button', { name: 'Crear sala' }).click();
+  await expect(createDialog.getByRole('alert')).toContainText('Ingresa un nombre de entre 1 y 80 caracteres.');
+  const createErrorBox = await createDialog.boundingBox();
+  expect(createErrorBox).not.toBeNull();
+  expect(createErrorBox!.height).toBeLessThanOrEqual(365);
+  await createDialog.getByRole('button', { name: 'Cancelar' }).click();
+
+  await page.getByRole('button', { name: `Más opciones de ${room.name}` }).click();
+  await page.getByRole('menuitem', { name: 'Editar sala' }).click();
+  const editDialog = page.getByRole('dialog', { name: 'Editar sala' });
+  await expect(editDialog).toBeVisible();
+  const editBox = await editDialog.boundingBox();
+  const readonlyId = editDialog.getByLabel('ID de la sala');
+  const readonlyBox = await readonlyId.boundingBox();
+  expect(editBox).not.toBeNull();
+  expect(readonlyBox).not.toBeNull();
+  expect(editBox!.width).toBeLessThanOrEqual(mobile ? 358 : 500);
+  expect(Math.round(readonlyBox!.height)).toBe(48);
+  await editDialog.getByLabel('Nombre de la sala').fill('');
+  await editDialog.getByRole('button', { name: 'Guardar cambios' }).click();
+  expect(await editDialog.getByLabel('Nombre de la sala').evaluate(el => getComputedStyle(el).borderTopColor)).toBe('rgb(248, 113, 113)');
+  await editDialog.getByRole('button', { name: 'Cancelar' }).click();
+
+  await page.getByRole('button', { name: '＋ Unirse a sala' }).click();
+  const joinDialog = page.getByRole('dialog', { name: 'Unirse a sala' });
+  await expect(joinDialog).toBeVisible();
+  const joinBox = await joinDialog.boundingBox();
+  expect(joinBox).not.toBeNull();
+  expect(joinBox!.width).toBeLessThanOrEqual(mobile ? 358 : 500);
+  const joinCancel = joinDialog.getByRole('button', { name: 'Cancelar' });
+  const joinSubmit = joinDialog.getByRole('button', { name: 'Unirse a la sala' });
+  const [jcBox, jsBox] = await Promise.all([joinCancel.boundingBox(), joinSubmit.boundingBox()]);
+  expect(Math.abs(jcBox!.y - jsBox!.y)).toBeLessThanOrEqual(2);
+  await joinSubmit.click();
+  await expect(joinDialog.getByRole('alert')).toBeVisible();
+  const [jcAfterBox, jsAfterBox] = await Promise.all([joinCancel.boundingBox(), joinSubmit.boundingBox()]);
+  expect(Math.abs(jcAfterBox!.y - jcBox!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(jsAfterBox!.y - jsBox!.y)).toBeLessThanOrEqual(1);
+  await joinCancel.click();
+});

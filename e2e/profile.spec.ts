@@ -934,3 +934,53 @@ test('Sprint 2 mantiene el perfil y el diálogo utilizables en una ventana inter
   await expect(confirm).toBeInViewport();
   await page.screenshot({ path: info.outputPath('US05-eliminacion-confirmacion-800x360.png'), scale: 'css' });
 });
+
+test('Fase 3 conserva la geometría visual del perfil y el diálogo de eliminación', async ({ page }, info) => {
+  const mobile = info.project.name.endsWith('mobile');
+  const viewport = mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+  await page.setViewportSize(viewport);
+  const { enableLoad } = await stubProfile(page);
+  enableLoad();
+  await page.goto('/perfil');
+
+  const card = page.getByRole('region', { name: 'Información personal' });
+  const editButton = page.getByRole('button', { name: 'Editar perfil' });
+  const deleteTrigger = page.getByRole('button', { name: 'Eliminar cuenta', exact: true });
+  const avatar = page.locator('main .user-profile-avatar');
+  await expect(editButton).toBeVisible();
+
+  const [cardBox, editBox, deleteBox, avatarBox] = await Promise.all([
+    card.boundingBox(),
+    editButton.boundingBox(),
+    deleteTrigger.boundingBox(),
+    avatar.boundingBox(),
+  ]);
+  expect(cardBox).not.toBeNull();
+  expect(editBox).not.toBeNull();
+  expect(deleteBox).not.toBeNull();
+  expect(avatarBox).not.toBeNull();
+
+  if (mobile) {
+    expect(Math.round(avatarBox!.width)).toBe(62);
+    expect(Math.round(avatarBox!.height)).toBe(62);
+    expect(editBox!.y).toBeGreaterThan(cardBox!.y + cardBox!.height - 100);
+    expect(deleteBox!.y).toBeGreaterThan(cardBox!.y + cardBox!.height);
+  } else {
+    expect(Math.round(avatarBox!.width)).toBe(68);
+    expect(Math.round(avatarBox!.height)).toBe(68);
+    expect(editBox!.x).toBeGreaterThan(cardBox!.x + cardBox!.width);
+    expect(deleteBox!.x).toBeGreaterThan(cardBox!.x + cardBox!.width);
+  }
+
+  await deleteTrigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Eliminar cuenta' });
+  await expect(dialog).toBeVisible();
+  const checkbox = dialog.getByRole('checkbox');
+  const confirm = dialog.getByRole('button', { name: 'Eliminar mi cuenta' });
+  expect(await confirm.evaluate(el => getComputedStyle(el).opacity)).toBe('0.46');
+  const box = await checkbox.boundingBox();
+  expect(box).not.toBeNull();
+  expect(Math.round(box!.width)).toBe(20);
+  expect(Math.round(box!.height)).toBe(20);
+  await dialog.getByRole('button', { name: 'Cancelar' }).click();
+});

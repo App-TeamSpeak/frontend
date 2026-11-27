@@ -113,19 +113,22 @@ export function ProfileEmailChange({ uid, email, supported, hidden, onBusy, onCo
   }
 
   if (hidden) return null;
-  if (supported === false) return <p className="user-profile-notice">Tu método de autenticación no admite cambiar el correo en TeamSpeak.</p>;
+  const noticeClass = 'user-profile-notice mt-4 rounded-[9px] border border-border bg-surface p-4 [overflow-wrap:anywhere]';
+  const secondaryBtn = "inline-flex min-h-[44px] min-w-0 items-center justify-center gap-3 rounded-[9px] border border-border-strong bg-surface px-5 py-[10px] max-[900px]:px-2 max-[900px]:min-h-[46px] font-['Inter_Variable',sans-serif] text-sm font-semibold text-link-strong cursor-pointer transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none hover:not-disabled:bg-subtle active:not-disabled:translate-y-px motion-reduce:active:not-disabled:translate-y-0 disabled:cursor-default disabled:opacity-60!";
+  const inputClass = 'h-[52px] w-full rounded-[9px] border border-input-border bg-surface px-4 py-3 text-text';
+  if (supported === false) return <p className={noticeClass}>Tu método de autenticación no admite cambiar el correo en TeamSpeak.</p>;
   if (supported !== true) return null;
 
   const pending = Boolean(pendingTarget);
   const editable = !pending && phase !== 'closed' && phase !== 'confirmed';
-  return <section className="user-profile-notice" aria-labelledby="profile-email-change-title">
-    <h3 id="profile-email-change-title">Cambiar correo electrónico</h3>
+  return <section className={noticeClass} aria-labelledby="profile-email-change-title">
+    <h3 className="mb-3" id="profile-email-change-title">Cambiar correo electrónico</h3>
     {previousLink && <p role="status">Los enlaces enviados anteriormente pueden seguir vigentes.</p>}
-    {phase === 'closed' && <button type="button" className="button secondary"
+    {phase === 'closed' && <button type="button" className={secondaryBtn}
       onClick={() => reset('idle')}>Abrir cambio de correo</button>}
     {phase === 'confirmed' && <>
       <p role="status">El correo nuevo fue verificado y sincronizado con tu perfil.</p>
-      <button type="button" className="button secondary" onClick={() => reset('idle')}>Cambiar otra dirección</button>
+      <button type="button" className={secondaryBtn} onClick={() => reset('idle')}>Cambiar otra dirección</button>
     </>}
     {pending && <>
       <p>Verificación pendiente para <strong>{pendingTarget}</strong>. Confirma el cambio desde tu nuevo correo.</p>
@@ -133,29 +136,29 @@ export function ProfileEmailChange({ uid, email, supported, hidden, onBusy, onCo
       {notVerified && <p role="status">El cambio todavía está pendiente de verificación.</p>}
     </>}
     {(editable || pending) && <form onSubmit={send}>
-      {editable && <div className="form-field">
-        <label htmlFor="new-profile-email">Nuevo correo electrónico</label>
-        <input id="new-profile-email" type="email" value={target} autoComplete="email" required disabled={busy}
+      {editable && <div className="mb-[22px]">
+        <label className="mb-4 block text-sm font-medium" htmlFor="new-profile-email">Nuevo correo electrónico</label>
+        <input className={inputClass} id="new-profile-email" type="email" value={target} autoComplete="email" required disabled={busy}
           onInvalid={() => setError('Introduce un correo electrónico válido.')}
           onChange={event => { setTarget(event.target.value); setError(''); }} />
       </div>}
-      {phase === 'reauth' && <div className="form-field">
-        <label htmlFor="profile-email-password">Contraseña actual</label>
-        <input id="profile-email-password" name="email-password" type="password" autoComplete="current-password" required />
+      {phase === 'reauth' && <div className="mb-[22px]">
+        <label className="mb-4 block text-sm font-medium" htmlFor="profile-email-password">Contraseña actual</label>
+        <input className={inputClass} id="profile-email-password" name="email-password" type="password" autoComplete="current-password" required />
       </div>}
       {busy && <p role="status">{phase === 'checking' ? 'Comprobando verificación…'
         : phase === 'validating' ? 'Validando disponibilidad…'
         : pending ? 'Enviando otra verificación…' : 'Enviando verificación…'}</p>}
-      <div className="user-profile-actions">
-        {pending && <button type="button" className="button secondary" disabled={busy} onClick={() => void check()}>Comprobar verificación</button>}
-        <button type="submit" className="button secondary" disabled={busy}>{pending ? 'Enviar otra verificación' : 'Enviar verificación'}</button>
+      <div className="mt-4 flex flex-wrap gap-2 max-[900px]:grid max-[900px]:grid-cols-2 max-[900px]:gap-3">
+        {pending && <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void check()}>Comprobar verificación</button>}
+        <button type="submit" className={secondaryBtn} disabled={busy}>{pending ? 'Enviar otra verificación' : 'Enviar verificación'}</button>
         {pending ? <>
-          <button type="button" className="button secondary" disabled={busy} onClick={() => reset('idle', pendingTarget)}>Cambiar dirección</button>
-          <button type="button" className="button secondary" disabled={busy} onClick={() => reset('closed')}>Salir del cambio de correo</button>
-        </> : <button type="button" className="button secondary" disabled={busy}
+          <button type="button" className={secondaryBtn} disabled={busy} onClick={() => reset('idle', pendingTarget)}>Cambiar dirección</button>
+          <button type="button" className={secondaryBtn} disabled={busy} onClick={() => reset('closed')}>Salir del cambio de correo</button>
+        </> : <button type="button" className={secondaryBtn} disabled={busy}
           onClick={() => reset(previousLink ? 'closed' : 'idle')}>Cancelar cambio de correo</button>}
       </div>
     </form>}
-    {error && <p role="alert" className="field-error">{error}</p>}
+    {error && <p role="alert" className="mt-1 text-sm text-error">{error}</p>}
   </section>;
 }

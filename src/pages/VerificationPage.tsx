@@ -25,12 +25,12 @@ export function VerificationPage() {
   }, []);
   useEffect(() => { void load(); return () => activeRequest.current?.abort(); }, [load]);
   return <PageContent eyebrow="Sprint 0 · Base técnica" title="Documento de verificación">
-    <p className="text-slate-300">Consulta el documento que la API obtiene de Firestore. Puedes actualizarlo para consultar sus cambios.</p>
-    <div className="mt-8 flex flex-wrap items-center justify-between gap-4"><p className="text-sm text-slate-300">Verificación de conexión</p><button className="button secondary" disabled={state.status === 'loading'} onClick={() => void load()} type="button">{state.status === 'loading' ? 'Consultando…' : 'Actualizar'}</button></div>
+    <p className="text-muted">Consulta el documento que la API obtiene de Firestore. Puedes actualizarlo para consultar sus cambios.</p>
+    <div className="mt-8 flex flex-wrap items-center justify-between gap-4"><p className="text-sm text-muted">Verificación de conexión</p><button className="button secondary" disabled={state.status === 'loading'} onClick={() => void load()} type="button">{state.status === 'loading' ? 'Consultando…' : 'Actualizar'}</button></div>
     <div className="mt-6" aria-live="polite" aria-busy={state.status === 'loading'}>
-      {state.status === 'loading' && <div className="notice" role="status"><p>Consultando los datos reales de Firestore…</p><p>El servidor puede tardar hasta un minuto en responder al iniciar.</p></div>}
-      {state.status === 'error' && <div className="error-panel" role="alert"><h2>No se pudo cargar el documento</h2><p>{state.error.message}</p><button className="button secondary" onClick={() => void load()} type="button">Reintentar</button></div>}
-      {state.status === 'success' && <div><p className="success-label" role="status">Éxito · Documento recibido de la API.</p>{Object.keys(state.document).length === 0 && <p>El documento existe, pero todavía no contiene campos.</p>}<dl className="document-grid">{Object.entries(state.document).map(([key, value]) => <div className="document-field" key={key}><dt>{key}</dt><dd><pre>{formatValue(value)}</pre></dd></div>)}</dl></div>}
+      {state.status === 'loading' && <div className="mt-4 rounded-[10px] border border-link p-4 text-link-strong" role="status"><p>Consultando los datos reales de Firestore…</p><p>El servidor puede tardar hasta un minuto en responder al iniciar.</p></div>}
+      {state.status === 'error' && <div className="rounded-xl border border-error bg-danger-deep p-6 text-error" role="alert"><h2>No se pudo cargar el documento</h2><p className="mt-3 mb-5">{state.error.message}</p><button className="button secondary" onClick={() => void load()} type="button">Reintentar</button></div>}
+      {state.status === 'success' && <div><p className="font-semibold text-success" role="status">Éxito · Documento recibido de la API.</p>{Object.keys(state.document).length === 0 && <p>El documento existe, pero todavía no contiene campos.</p>}<dl className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-4">{Object.entries(state.document).map(([key, value]) => <div className="min-w-0 rounded-xl border border-border bg-avatar-green p-6" key={key}><dt className="mb-3 font-semibold text-success break-words">{key}</dt><dd><pre className="font-[inherit] whitespace-pre-wrap break-words">{formatValue(value)}</pre></dd></div>)}</dl></div>}
     </div>
   </PageContent>;
 }
