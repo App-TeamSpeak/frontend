@@ -1,0 +1,47 @@
+@keyframes menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dashboard-skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes room-loading-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  50%,
+  100% {
+    transform: translateX(290%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0.01ms;
+    --motion-base: 0.01ms;
+  }
+
+  html .skeleton-shimmer {
+    animation: none;
+  }
+
+  html .skeleton-block {
+    background: #263449;
+  }
+}

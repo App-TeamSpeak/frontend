@@ -61,6 +61,25 @@ describe('RoomPage', () => {
     expect(screen.getByRole('heading', { name: 'Sala nueva' })).toBeInTheDocument();
   });
 
+  it('muestra el diálogo consistente de edición con descripción, ID de solo lectura y validación local', async () => {
+    mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala original', ownerId: 'u1' });
+    mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });
+    mocks.io.mockReturnValue(mocks.socket);
+    renderRoom();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar sala' }));
+    const dialog = screen.getByRole('dialog', { name: 'Editar sala' });
+    expect(within(dialog).getByText('Actualiza el nombre de tu sala. Los cambios se aplicarán a todos sus participantes.')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('ID de la sala')).toHaveValue('room-1  ·  No editable');
+    expect(within(dialog).getByLabelText('ID de la sala')).toHaveAttribute('readonly');
+    expect(within(dialog).getByText('El ID se mantiene igual aunque cambies el nombre.')).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText('Nombre de la sala'), { target: { value: '   ' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Revisa el nombre de la Sala antes de guardar.');
+    expect(mocks.updateRoom).not.toHaveBeenCalled();
+  });
+
   it('permite cancelar y eliminar la sala desde los controles del anfitrión', async () => {
     mocks.getRoom.mockResolvedValue({ id: 'room-1', name: 'Sala original', ownerId: 'u1' });
     mocks.listMessages.mockResolvedValue({ messages: [], nextCursor: null });

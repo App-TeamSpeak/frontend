@@ -30,7 +30,10 @@ describe('PublicOnlyRoute', () => {
   it('waits for the session before rendering the login', () => {
     authState.loading = true;
     renderRoute();
-    expect(screen.getByRole('status')).toHaveTextContent('Cargando sesión');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Cargando sesión');
+    expect(status).not.toHaveClass('page-panel', 'route-loading-panel');
+    expect(status).toHaveClass('rounded-[24px]', 'border-border', 'bg-surface');
     expect(screen.queryByRole('heading', { name: 'login' })).not.toBeInTheDocument();
   });
 

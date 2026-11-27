@@ -311,3 +311,82 @@ test('autenticación visual · una sesión existente redirige desde ingreso', as
   await expect(page.getByRole('heading', { name: 'Tus salas', exact: true })).toBeVisible();
   await capture(page, info, 'login-sesion-redireccion');
 });
+
+test('autenticación visual · geometría desktop, espaciado de campos y botón deshabilitado', async ({ page }, info) => {
+  test.skip(info.project.name.endsWith('mobile'), 'La separación ilustración/tarjeta aplica en escritorio.');
+  const auth = await stubAuth(page);
+  await page.goto('/login');
+
+  const flow = page.locator('.auth-flow');
+  const intro = flow.locator('> div').first();
+  const card = page.locator('.auth-flow .auth-card');
+  const [flowBox, introBox, cardBox] = await Promise.all([
+    flow.boundingBox(),
+    intro.boundingBox(),
+    card.boundingBox(),
+  ]);
+  expect(flowBox).not.toBeNull();
+  expect(introBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.x - (introBox!.x + introBox!.width)).toBeGreaterThanOrEqual(120);
+  expect(Math.abs((flowBox!.x + flowBox!.width) - (cardBox!.x + cardBox!.width))).toBeLessThanOrEqual(2);
+
+  const emailLabel = page.locator('label[for="auth-email"]');
+  const emailInput = page.getByLabel('Correo electrónico', { exact: true });
+  const passwordLabel = page.locator('label[for="auth-password"]');
+  const [emailLabelBox, emailInputBox, passwordLabelBox] = await Promise.all([
+    emailLabel.boundingBox(),
+    emailInput.boundingBox(),
+    passwordLabel.boundingBox(),
+  ]);
+  expect(emailLabelBox).not.toBeNull();
+  expect(emailInputBox).not.toBeNull();
+  expect(passwordLabelBox).not.toBeNull();
+  expect(emailInputBox!.y - (emailLabelBox!.y + emailLabelBox!.height)).toBeLessThanOrEqual(8);
+  expect(passwordLabelBox!.y - (emailInputBox!.y + emailInputBox!.height)).toBeLessThanOrEqual(16);
+
+  auth.reply({ user: { ...identity, username: 'ana_prueba' } });
+  auth.hold();
+  await page.getByRole('button', { name: 'Continuar con Google' }).click();
+  const connecting = page.getByRole('button', { name: 'Conectando…' });
+  await expect(connecting).toBeDisabled();
+  const buttonStyle = await connecting.evaluate(button => {
+    const root = getComputedStyle(document.documentElement);
+    const computed = getComputedStyle(button);
+    return {
+      opacity: computed.opacity,
+      backgroundColor: computed.backgroundColor,
+      color: computed.color,
+      expectedBg: (() => {
+        const probe = document.createElement('span');
+        probe.style.backgroundColor = root.getPropertyValue('--border');
+        document.body.appendChild(probe);
+        const value = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return value;
+      })(),
+      expectedColor: (() => {
+        const probe = document.createElement('span');
+        probe.style.color = root.getPropertyValue('--muted');
+        document.body.appendChild(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return value;
+      })(),
+    };
+  });
+  expect(buttonStyle.opacity).toBe('1');
+  expect(buttonStyle.backgroundColor).toBe(buttonStyle.expectedBg);
+  expect(buttonStyle.color).toBe(buttonStyle.expectedColor);
+  auth.resume();
+
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/recuperar-contrasena');
+  const [wideFlowBox, headerBrandBox] = await Promise.all([
+    page.locator('.auth-flow').boundingBox(),
+    page.locator('header a').first().boundingBox(),
+  ]);
+  expect(wideFlowBox).not.toBeNull();
+  expect(headerBrandBox).not.toBeNull();
+  expect(Math.abs(wideFlowBox!.x - headerBrandBox!.x)).toBeLessThanOrEqual(4);
+});

@@ -9,7 +9,7 @@ import {
   RoomRequestTimeout, ROOM_CREATION_TIMEOUT_MS, ROOM_REVIEW_TIMEOUT_MS,
 } from './roomCreationState';
 
-export function CopyRoomId({ id }: { id: string }) {
+export function CopyRoomId({ id, compact = false }: { id: string; compact?: boolean }) {
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -28,10 +28,10 @@ export function CopyRoomId({ id }: { id: string }) {
   }
 
   const copied = feedback?.kind === 'success';
-  return <div className="room-id-actions">
-    <span className="room-card-id">ID {id}</span>
+  return <div className={`${compact ? 'my-0' : 'my-3'} flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 [overflow-wrap:anywhere]`}>
+    <span className="room-card-id text-xs leading-4 text-muted">ID {id}</span>
     <button
-      className="room-copy-button"
+      className={`inline-grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border p-0 cursor-pointer transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none active:not-disabled:translate-y-px motion-reduce:active:not-disabled:translate-y-0 ${copied ? 'border-[#286a56] bg-[#103c30] text-success' : 'border-border bg-subtle text-muted [@media(hover:hover)_and_(pointer:fine)]:hover:not-disabled:border-link [@media(hover:hover)_and_(pointer:fine)]:hover:not-disabled:bg-stage-active [@media(hover:hover)_and_(pointer:fine)]:hover:not-disabled:text-link-strong'}`}
       type="button"
       aria-label="Copiar ID"
       title="Copiar ID"
@@ -51,7 +51,7 @@ export function CopyRoomId({ id }: { id: string }) {
     </button>
     <span
       role="status"
-      className={feedback ? `room-copy-badge room-copy-badge-${feedback.kind}` : undefined}
+      className={`empty:absolute ${feedback ? `inline-flex min-h-[22px] items-center rounded-full border px-2 py-0.5 font-['Inter_Variable',sans-serif] text-[11px] leading-[1.2] font-semibold ${feedback.kind === 'success' ? 'border-[#286a56] bg-[#103c30] text-success' : 'border-[#995360] bg-[#3a202b] text-error'}` : ''}`}
     >
       {feedback?.text ?? ''}
     </span>
@@ -201,66 +201,72 @@ export function RoomCreation({ onCreated, onClose, onReviewed, dialog = false, p
     onClose();
   }
 
+  const btnBase = "inline-flex min-h-[44px] items-center justify-center gap-3 rounded-[10px] border font-['Inter_Variable',sans-serif] text-sm font-semibold cursor-pointer transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none active:not-disabled:translate-y-px motion-reduce:active:not-disabled:translate-y-0 disabled:cursor-default disabled:opacity-60!";
+  const actionBtn = `${btnBase} h-[44px] px-4 py-3 max-md:h-auto max-md:min-h-[46px] max-md:w-auto max-md:min-w-0 max-md:flex-1 max-md:rounded-[9px] max-md:px-2 max-md:text-center max-md:whitespace-normal`;
+  const secondaryAction = `${actionBtn} w-[126px] border-border-strong bg-surface text-link-strong hover:not-disabled:bg-subtle`;
+  const primaryAction = `${actionBtn} w-[156px] border-link bg-primary text-text hover:not-disabled:bg-primary-hover`;
+
   const content = created ? <>
     <h2 id="create-room-title" ref={outcomeHeading} tabIndex={-1} aria-label="Sala creada correctamente">
-      <span className="room-created-title-wide">Sala creada correctamente</span>
-      <span className="room-created-title-short" aria-hidden="true">Sala creada</span>
+      <span className="max-md:hidden">Sala creada correctamente</span>
+      <span className="hidden max-md:inline" aria-hidden="true">Sala creada</span>
     </h2>
     <p>Tu sala está lista para estudiar. Puedes encontrarla en el panel de salas.</p>
-    <div className="room-create-success" role="status">
+    <div className="my-[28px_22px] grid gap-[5px] rounded-xl border border-[#266a53] bg-[#12392d] px-4 py-[14px] text-success [overflow-wrap:anywhere] [&_p]:text-muted" role="status">
       <strong><span aria-hidden="true">✓</span> Creación completada</strong>
       <p>{created.name}</p>
     </div>
-    <div className="room-created-return">
-      <button type="button" className="button primary" onClick={close}>Ir a mis salas</button>
+    <div className="flex justify-center">
+      <button type="button" className={`${btnBase} min-w-[min(168px,100%)] border-link bg-primary px-5 py-3 text-text hover:not-disabled:bg-primary-hover max-md:w-full`} onClick={close}>Ir a mis salas</button>
     </div>
-    <div className="room-created-tools">
-      <CopyRoomId id={created.id} />
-      <Link onClick={() => operation.set({ phase: 'idle' })} className="button secondary" to={`/salas/${encodeURIComponent(created.id)}`}>Entrar</Link>
+    <div className="mt-[14px] flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border pt-2">
+      <CopyRoomId id={created.id} compact />
+      <Link onClick={() => operation.set({ phase: 'idle' })} className={`${btnBase} border-border-strong bg-surface px-5 py-3 text-link-strong hover:bg-subtle`} to={`/salas/${encodeURIComponent(created.id)}`}>Entrar</Link>
     </div>
   </> : <>
     <h2 id="create-room-title">Crear sala</h2>
-    <p className="room-management-dialog-description">Configura una sala para tu grupo de estudio.</p>
-    <form onSubmit={event => { event.preventDefault(); void submit(); }} noValidate aria-busy={saving}>
-      <div className="form-field">
-        <label htmlFor="create-room-name">Nombre de la sala</label>
-        <input ref={input} id="create-room-name" placeholder="Ej. Física · Grupo de laboratorio"
+    <p className="mt-3 text-[15px] leading-[21px] text-muted">Configura una sala para tu grupo de estudio.</p>
+    <form className="mt-9 max-md:mt-[30px]" onSubmit={event => { event.preventDefault(); void submit(); }} noValidate aria-busy={saving}>
+      <div className="mb-5">
+        <label className="mb-2 block text-sm leading-[18px] font-medium" htmlFor="create-room-name">Nombre de la sala</label>
+        <input className="h-[52px] max-md:h-[51px] w-full rounded-[9px] border bg-surface px-4 py-3 text-text placeholder:text-muted placeholder:opacity-100 not-aria-[invalid=true]:border-border-strong aria-[invalid=true]:border-[1.5px] aria-[invalid=true]:border-error-strong" ref={input} id="create-room-name" placeholder="Ej. Física · Grupo de laboratorio"
           value={name} required disabled={saving} aria-invalid={Boolean(fieldError)}
           aria-describedby={fieldError ? 'create-room-error' : undefined}
           onChange={event => { setDraft(event.target.value); setInvalid(''); }} />
-        {fieldError && <p id="create-room-error" className="field-error" role="alert">{fieldError}</p>}
+        {fieldError && <p id="create-room-error" className="mt-1.5 text-xs leading-[18px] text-error [overflow-wrap:anywhere]" role="alert">{fieldError}</p>}
       </div>
-      {saving ? <div role="status" className="room-create-progress">
+      {saving ? <div role="status" className="my-3 text-[13px] text-muted max-md:my-4 max-md:min-h-[76px] max-md:rounded-xl max-md:border max-md:border-[#355d95] max-md:bg-surface-soft max-md:px-4 max-md:py-[11px] max-md:text-text [&_strong]:font-normal max-md:[&_strong]:block max-md:[&_strong]:font-['Inter_Variable',sans-serif] max-md:[&_strong]:text-[15px] max-md:[&_strong]:leading-5 max-md:[&_strong]:font-semibold [&_p]:hidden max-md:[&_p]:mt-1.5 max-md:[&_p]:block max-md:[&_p]:text-[13px] max-md:[&_p]:leading-[18px] max-md:[&_p]:text-muted">
         <strong>Creando sala…</strong>
         <p>Preparando tu espacio.</p>
       </div> :
-        !notice && !fieldError && <p className="room-create-note">El identificador se asigna al crear la sala.</p>}
-      {notice && <div className="room-create-alert" role="alert">
+        !notice && !fieldError && <p className="my-3 text-[13px] text-muted">El identificador se asigna al crear la sala.</p>}
+      {notice && <div className="my-4 rounded-xl border border-[#995360] bg-[#3a202b] px-4 py-[11px] text-error [overflow-wrap:anywhere] max-md:min-h-[74px] [&_strong]:block [&_strong]:font-['Inter_Variable',sans-serif] [&_strong]:text-[15px] [&_strong]:leading-5 [&_p]:mt-1.5 [&_p]:text-[13px] [&_p]:leading-[18px] [&_p]:text-muted" role="alert">
         <strong>{uncertain ? 'Resultado sin confirmar' : 'Error al crear'}</strong>
         <p>{notice}</p>
       </div>}
       {reviewing && <p role="status">Actualizando tus salas…</p>}
-      {uncertain && reviewed && <section className="room-create-review" aria-label="Salas actualizadas">
+      {uncertain && reviewed && <section className="my-4 max-h-[180px] overflow-auto rounded-xl border border-border bg-surface-soft px-4 py-[11px] [overflow-wrap:anywhere]" aria-label="Salas actualizadas">
         <p>Comprueba las salas y sus identificadores antes de decidir si vuelves a enviar.</p>
         {reviewed.length ? <ul>{reviewed.map(room => <li key={room.id}>{room.name} · ID {room.id}</li>)}</ul> : <p>La lista está vacía.</p>}
       </section>}
-      <div className="room-management-dialog-actions">
-        <button className="button secondary" type="button" onClick={close} disabled={saving || reviewing}>Cancelar</button>
+      <div className="mt-5 flex justify-end gap-3 max-md:flex-wrap max-md:gap-[13px]">
+        <button className={secondaryAction} type="button" onClick={close} disabled={saving || reviewing}>Cancelar</button>
         {uncertain && !reviewed && !reviewing
-          ? <button className="button primary" type="button" onClick={() => void reviewRooms()}>{state.phase === 'uncertain' && state.reviewTimedOut ? 'Reintentar consulta' : 'Actualizar mis salas'}</button>
+          ? <button className={primaryAction} type="button" onClick={() => void reviewRooms()}>{state.phase === 'uncertain' && state.reviewTimedOut ? 'Reintentar consulta' : 'Actualizar mis salas'}</button>
           : uncertain && reviewed && !saving
-            ? <button className="button primary" type="button" onClick={() => void submit(true)}>Crear otra vez</button>
-            : <button className="button primary" type="submit" disabled={saving || reviewing}>
+            ? <button className={primaryAction} type="button" onClick={() => void submit(true)}>Crear otra vez</button>
+            : <button className={primaryAction} type="submit" disabled={saving || reviewing}>
               {saving ? 'Creando…' : notice ? 'Reintentar' : 'Crear sala'}
             </button>}
       </div>
     </form>
   </>;
 
-  const panelClass = `room-management-dialog room-management-dialog-create${created ? ' room-created-panel' : ''}`;
-  return <>{(protectNavigation || (dialog && shared)) && <CreationNavigation operation={operation} />}{dialog ? <dialog ref={modal} className={`${panelClass} room-create-dialog`}
+  const panelClass = `w-[min(500px,100%)] rounded-[20px] border border-border bg-surface px-8 pt-7 pb-6 shadow-[0_24px_64px_var(--dialog-shadow)] [overflow-wrap:anywhere] max-md:rounded-[19px] max-md:px-[23px] max-md:pt-[26px] max-md:pb-6 [&_h2]:text-[26px] [&_h2]:leading-8 max-md:[&_h2]:text-[25px] max-md:[&_h2]:leading-[30px] ${created ? 'min-h-[348px] pt-8 pb-6 max-md:min-h-[min(352px,calc(100dvh-32px))] max-md:[&_h2]:text-[26px] [&_h2]:focus:outline-none [&_h2]:focus:shadow-none [&>p]:mt-6 [&>p]:max-w-[44ch] [&>p]:text-[15px] [&>p]:text-muted' : 'min-h-[330px] max-md:min-h-[min(360px,calc(100dvh-32px))]'}`;
+  const dialogClass = `${panelClass} fixed inset-0 m-auto max-w-[calc(100%-32px)] max-h-[calc(100dvh-32px)] overflow-auto text-text backdrop:bg-overlay max-md:w-[min(358px,calc(100%-32px))]${!created && (saving || notice) ? ' max-md:min-h-[min(416px,calc(100dvh-32px))]' : ''}`;
+  return <>{(protectNavigation || (dialog && shared)) && <CreationNavigation operation={operation} />}{dialog ? <dialog ref={modal} className={dialogClass}
     aria-labelledby="create-room-title" onCancel={event => {
       event.preventDefault();
       close();
-    }}>{content}</dialog> : <section className={`${panelClass} room-create-page`}>{content}</section>}</>;
+    }}>{content}</dialog> : <section className={`${panelClass} mx-auto`}>{content}</section>}</>;
 }

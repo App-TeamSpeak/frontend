@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 're
 import { Link, useNavigate } from 'react-router-dom';
 import { useOptionalAuth } from '../auth/AuthContext';
 import { JoinRoomForm } from '../components/JoinRoomForm';
+import { RoomManagementDialog } from '../components/RoomManagementDialog';
 import { useRoomOperation } from './roomCreationState';
 import { CopyRoomId, RoomCreation } from './RoomCreation';
 import { PageTitle } from '../components/PageTitle';
@@ -35,39 +36,39 @@ function formatRoomActivity(room: Pick<Room, 'lastActivityAt' | 'createdAt'>): s
 }
 
 function RoomCardSkeleton({ accent }: { accent: string }) {
-  return <article className="room-card room-card-skeleton" style={{ '--room-accent': accent } as React.CSSProperties} aria-hidden="true">
-    <div className="room-card-accent-clip"><div className="room-card-accent" /></div>
-    <div className="room-card-content">
-      <span className="skeleton-block skeleton-shimmer skeleton-title" />
-      <span className="skeleton-block skeleton-shimmer skeleton-meta" />
-      <span className="skeleton-block skeleton-shimmer skeleton-id" />
-      <span className="skeleton-block skeleton-shimmer skeleton-participants" />
-      <span className="skeleton-live-row"><span className="skeleton-live-dot" /><span className="skeleton-block skeleton-shimmer skeleton-live-text" /></span>
-      <span className="skeleton-block skeleton-shimmer skeleton-action" />
+  return <article className="room-card-skeleton min-h-[220px] max-md:min-h-0 overflow-hidden rounded-[18px] max-md:rounded-[15px] border border-border-strong bg-[linear-gradient(to_bottom,var(--room-accent)_0_5px,#111827_5px)] max-md:bg-none max-md:bg-surface max-md:[&:nth-child(n+3)]:hidden" style={{ '--room-accent': accent } as React.CSSProperties} aria-hidden="true">
+    <div className="h-[5px] w-full max-md:hidden" />
+    <div className="flex min-h-[215px] flex-col px-[23px] py-[29px] max-md:min-h-[147px] max-md:gap-4 max-md:p-[19px]">
+      <span className="skeleton-block skeleton-shimmer h-[18px] w-[48%] rounded-[6px] max-md:h-3" />
+      <span className="skeleton-block skeleton-shimmer mt-[22px] h-3 w-[35%] rounded-[5px] max-md:mt-0 max-md:w-[80%]" />
+      <span className="skeleton-block skeleton-shimmer mt-[22px] h-[9px] w-[22%] max-md:mt-0 max-md:h-3 max-md:w-[40%]" />
+      <span className="skeleton-block skeleton-shimmer mt-[22px] h-[10px] w-[28%] max-md:mt-0 max-md:h-3 max-md:w-[55%]" />
+      <span className="mt-7 flex items-center gap-2 max-md:hidden"><span className="h-2 w-2 rounded bg-[#1e4d46]" /><span className="skeleton-block skeleton-shimmer h-[10px] w-[30%]" /></span>
+      <span className="skeleton-block skeleton-shimmer mt-auto ml-auto h-[10px] w-[15%] rounded-[5px] max-md:hidden" />
     </div>
   </article>;
 }
 
 function RoomLoadError({ onRetry, message }: { onRetry: () => void; message: string }) {
-  return <article className="room-load-error">
-    <div className="room-load-error-summary" role="alert">
-      <div className="room-load-error-icon" aria-hidden="true">
-        <img src="/assets/figma/error-state.svg" alt="" />
-        <span>!</span>
+  return <article className="mx-auto mt-[78px] mb-[42px] flex min-h-[380px] w-[min(600px,100%)] flex-col items-center justify-start rounded-[18px] border border-border bg-surface px-8 pt-[76px] pb-8 text-center max-md:my-8 max-md:min-h-0 max-md:w-full max-md:border-0 max-md:bg-transparent max-md:p-0 max-md:text-start">
+    <div className="flex flex-col items-center max-md:min-h-[128px] max-md:w-full max-md:items-start max-md:rounded-xl max-md:border max-md:border-error-strong max-md:bg-danger-surface max-md:px-[17px] max-md:py-4" role="alert">
+      <div className="relative h-16 w-16 shrink-0 max-md:hidden" aria-hidden="true">
+        <img className="block h-16 w-16" src="/assets/figma/error-state.svg" alt="" />
+        <span className="absolute inset-0 grid place-items-center font-['Inter_Variable',sans-serif] text-[30px] leading-none font-semibold text-error">!</span>
       </div>
-      <h3 className="room-load-error-title">No pudimos cargar tus salas</h3>
-      <p className="room-load-error-description">{message}</p>
+      <h3 className="mt-6 font-['Inter_Variable',sans-serif] text-2xl leading-[30px] font-semibold text-text max-md:mt-0 max-md:text-base max-md:leading-[22px] max-md:text-error">No pudimos cargar tus salas</h3>
+      <p className="mt-[14px] max-w-[504px] text-[15px] leading-[21px] text-muted max-md:mt-[10px] max-md:text-sm">{message}</p>
     </div>
-    <button className="room-load-error-retry" type="button" onClick={onRetry}>Reintentar</button>
+    <button className="mt-9 min-h-[48px] w-[168px] rounded-lg border border-link bg-primary px-5 font-['Inter_Variable',sans-serif] text-sm font-semibold text-text cursor-pointer transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none hover:not-disabled:bg-primary-hover active:not-disabled:translate-y-px motion-reduce:active:not-disabled:translate-y-0 max-md:mt-[23px] max-md:w-full" type="button" onClick={onRetry}>Reintentar</button>
   </article>;
 }
 
 function EmptyRoomsState({ onCreate }: { onCreate: () => void }) {
-  return <article className="room-empty-state">
-    <div className="room-empty-state-icon" aria-hidden="true"><img src="/assets/figma/add-room.svg" alt="" /></div>
-    <h3 className="room-empty-state-title">No tienes salas</h3>
-    <p className="room-empty-state-description">Cuando crees una sala, aparecerá aquí.</p>
-    <button className="room-empty-state-action" type="button" onClick={onCreate}>Crear mi primera sala</button>
+  return <article className="mx-auto my-[75px] flex min-h-[350px] w-[min(780px,100%)] flex-col items-center justify-start rounded-[24px] border border-border bg-surface px-6 pt-[33px] pb-8 text-center max-md:mt-8 max-md:mb-5 max-md:items-stretch max-md:px-[29px] max-md:pt-[26px] max-md:pb-[31px] max-md:text-start">
+    <div className="grid h-[84px] w-[84px] shrink-0 place-items-center rounded-[24px] bg-surface-soft max-md:h-[70px] max-md:w-[70px] max-md:self-center" aria-hidden="true"><img className="block h-9 w-9" src="/assets/figma/add-room.svg" alt="" /></div>
+    <h3 className="mt-[26px] font-['Inter_Variable',sans-serif] text-[26px] leading-[31px] font-semibold text-text max-md:mt-[35px]">No tienes salas</h3>
+    <p className="mt-[13px] text-[15px] leading-[18px] text-muted max-md:mt-4 max-md:max-w-full max-md:text-sm max-md:leading-5">Cuando crees una sala, aparecerá aquí.</p>
+    <button className="mt-10 inline-flex min-h-[52px] w-[360px] items-center justify-center rounded-[10px] border border-link bg-primary px-5 font-['Inter_Variable',sans-serif] text-sm font-semibold text-text cursor-pointer transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none hover:not-disabled:bg-primary-hover active:not-disabled:translate-y-px motion-reduce:active:not-disabled:translate-y-0 max-md:mt-8 max-md:min-h-[46px] max-md:w-full" type="button" onClick={onCreate}>Crear mi primera sala</button>
   </article>;
 }
 
@@ -104,7 +105,7 @@ function JoinRoomDialog({ onClose, onJoined }: { onClose: () => void; onJoined: 
     <dialog
       ref={modal}
       onCancel={cancel}
-      className={`room-management-dialog room-operation-dialog room-management-dialog-join${invalid ? ' room-management-dialog-join-error' : ''}`}
+      className={`fixed inset-0 m-auto max-w-[calc(100%-32px)] max-h-[calc(100dvh-32px)] overflow-auto [overflow-wrap:anywhere] w-[min(500px,100%)] min-h-[370px] rounded-[20px] border border-border bg-surface px-8 pt-7 pb-5 text-text shadow-[0_24px_64px_var(--dialog-shadow)] backdrop:bg-overlay max-md:w-[min(358px,calc(100%-32px))] max-md:min-h-[min(360px,calc(100dvh-32px))] max-md:rounded-[19px] max-md:px-[23px] max-md:pt-[26px] max-md:pb-6 [&_h2]:text-[26px] [&_h2]:leading-8 max-md:[&_h2]:text-[25px] max-md:[&_h2]:leading-[30px] max-md:[&:has(.room-management-status)]:min-h-[min(416px,calc(100dvh-32px))] max-md:[&:has(.room-management-status)_.room-management-dialog-join-helper]:hidden${invalid ? ' room-management-dialog-join-error' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="manage-room-title"
@@ -112,7 +113,7 @@ function JoinRoomDialog({ onClose, onJoined }: { onClose: () => void; onJoined: 
       aria-busy={busy}
     >
       <h2 id="manage-room-title">Unirse a sala</h2>
-      <p className="room-management-dialog-description" id="manage-room-description">
+      <p className="mt-3 text-[15px] leading-[21px] text-muted" id="manage-room-description">
         Ingresa únicamente el ID de la sala que te compartieron.
       </p>
       <JoinRoomForm
@@ -122,7 +123,12 @@ function JoinRoomDialog({ onClose, onJoined }: { onClose: () => void; onJoined: 
         onInvalidChange={setInvalid}
         onBusyChange={handleBusyChange}
         cancelAction={
-          <button className="button secondary" type="button" disabled={busy} onClick={close}>
+          <button
+            className="inline-flex h-12 min-h-[48px] w-[130px] items-center justify-center gap-3 rounded-[10px] border border-border-strong bg-surface px-4 py-3 font-['Inter_Variable',sans-serif] text-sm font-semibold text-link-strong cursor-pointer transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none hover:not-disabled:bg-subtle active:not-disabled:translate-y-px motion-reduce:active:not-disabled:translate-y-0 disabled:cursor-default disabled:opacity-60! max-md:h-auto max-md:min-h-[46px] max-md:w-auto max-md:min-w-0 max-md:flex-1 max-md:rounded-[9px] max-md:px-2 max-md:text-center max-md:whitespace-normal"
+            type="button"
+            disabled={busy}
+            onClick={close}
+          >
             Cancelar
           </button>
         }
@@ -135,148 +141,42 @@ function JoinRoomDialog({ onClose, onJoined }: { onClose: () => void; onJoined: 
   );
 }
 
-function RoomManagementDialog({ dialog, onClose, onSave, onDelete }: {
-  dialog: Extract<RoomDialogState, { kind: 'edit' | 'delete' }>;
-  onClose: () => void;
-  onSave: (name: string) => Promise<void>;
-  onDelete: () => Promise<void>;
-}) {
-  const modal = useRef<HTMLDialogElement>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const cancelButtonRef = useRef<HTMLButtonElement>(null);
-  const [invalid, setInvalid] = useState(false);
-  const [feedback, setFeedback] = useState('');
-  const [busy, setBusy] = useState(false);
-  const pending = useRef(false);
-  const loadingLabel = {
-    edit: ['Guardando cambios…', 'Actualizando el nombre de la sala.'],
-    delete: ['Eliminando sala…', 'Retirando la sala del listado.'],
-  }[dialog.kind];
-  const errorHeading = {
-    edit: 'No pudimos guardar los cambios',
-    delete: 'No pudimos eliminar la sala',
-  }[dialog.kind];
-
-  async function submit(action: () => Promise<void>) {
-    if (pending.current) return;
-    pending.current = true;
-    setBusy(true);
-    setFeedback('');
-    try {
-      await action();
-    } catch (error) {
-      setFeedback(roomError(error, 'No pudimos completar la operación. Inténtalo de nuevo.'));
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
-  }
-
-  function cancel(event: FormEvent<HTMLDialogElement>) {
-    event.preventDefault();
-    if (!pending.current) close();
-  }
-
-  function close() {
-    if (typeof modal.current?.close === 'function') modal.current.close();
-    onClose();
-  }
-
-  const notice = busy ? <div className="room-management-status" role="status">
-    <strong>{loadingLabel[0]}</strong>
-    <p>{loadingLabel[1]}</p>
-  </div> : feedback && <div className="room-management-status" role="alert">
-    <strong>{errorHeading}</strong>
-    <p>{feedback}</p>
-  </div>;
-  useEffect(() => {
-    const element = modal.current;
-    if (element && !element.open) {
-      if (typeof element.showModal === 'function') element.showModal();
-      else element.open = true;
-    }
-    (dialog.kind === 'delete' ? cancelButtonRef.current : input.current)?.focus();
-  }, [dialog]);
-
-  if (dialog.kind === 'edit') {
-    return <dialog ref={modal} onCancel={cancel}
-      className={`room-management-dialog room-operation-dialog room-management-dialog-edit${invalid ? ' room-management-dialog-edit-error' : ''}`} role="dialog" aria-modal="true" aria-labelledby="manage-room-title" aria-describedby="manage-room-description" aria-busy={busy}>
-        <h2 id="manage-room-title">Editar sala</h2>
-        <p className="room-management-dialog-description" id="manage-room-description">
-          Actualiza el nombre de tu sala. Los cambios se aplicarán a todos sus participantes.
-        </p>
-        <form noValidate onSubmit={event => {
-          event.preventDefault();
-          const value = input.current?.value.trim() ?? '';
-          if (!value) { setInvalid(true); input.current?.focus(); return; }
-          void submit(() => onSave(value));
-        }}>
-          <div className="form-field">
-            <label htmlFor="manage-room-input">Nombre de la sala</label>
-            <input id="manage-room-input" ref={input} defaultValue={dialog.room.name}
-              disabled={busy} aria-invalid={invalid} aria-describedby={invalid ? 'manage-room-error' : undefined}
-              onChange={() => { setInvalid(false); setFeedback(''); }} />
-          </div>
-          {invalid && <p id="manage-room-error" className="room-management-dialog-field-error" role="alert">
-            Revisa el nombre de la Sala antes de guardar.
-          </p>}
-          <div className="form-field room-management-dialog-id-field"><label htmlFor="edit-room-id">ID de la sala</label><input className="room-management-dialog-readonly" id="edit-room-id" value={`${dialog.room.id}  ·  No editable`} readOnly aria-readonly="true" /></div><p className="room-management-dialog-helper">El ID se mantiene igual aunque cambies el nombre.</p>
-          {notice}
-          <div className="room-management-dialog-actions">
-            <button className="button secondary" type="button" disabled={busy} onClick={close}>Cancelar</button>
-            <button className="button primary" type="submit" disabled={busy}>Guardar cambios</button>
-          </div>
-        </form>
-    </dialog>;
-  }
-
-  return <dialog ref={modal} onCancel={cancel} className="room-management-dialog room-operation-dialog room-management-dialog-delete" role="dialog" aria-modal="true" aria-labelledby="delete-room-title" aria-describedby="delete-room-description delete-room-warning" aria-busy={busy}>
-      <h2 id="delete-room-title">¿Eliminar esta sala?</h2>
-      <p id="delete-room-description">Vas a eliminar «{dialog.room.name}». La Sala dejará de estar disponible para ti y sus participantes.</p>
-      <div className="room-management-dialog-warning" id="delete-room-warning">Esta acción no se puede deshacer.</div>
-      {notice}
-      <div className="room-management-dialog-actions">
-        <button ref={cancelButtonRef} className="button secondary" type="button" disabled={busy} onClick={close}>Cancelar</button>
-        <button className="button room-management-dialog-danger" type="button" disabled={busy} onClick={() => void submit(onDelete)}>Eliminar sala</button>
-      </div>
-  </dialog>;
-}
-
 function RoomCard({ room, openMenu, onToggleMenu, onEdit, onDelete, menuButtonRef }: { room: RoomPreview; openMenu: boolean; onToggleMenu: () => void; onEdit: () => void; onDelete: () => void; menuButtonRef: (button: HTMLButtonElement | null) => void }) {
   const activityLabel = formatRoomActivity(room);
   const connectedCount = typeof room.connected === 'number' && Number.isFinite(room.connected)
     ? Math.max(0, Math.trunc(room.connected))
     : undefined;
-  return <article className="room-card" style={{ '--room-accent': room.accent } as React.CSSProperties}>
-    <div className="room-card-accent-clip"><div className="room-card-accent" /></div>
-    <div className="room-card-content">
-      <div className="room-card-heading">
-        <h3>{room.name}</h3>
-        <div className="room-card-menu-wrap" data-room-menu>
-          <button ref={menuButtonRef} className="room-card-menu-button" type="button" aria-label={`Más opciones de ${room.name}`} aria-haspopup="menu" aria-expanded={openMenu} aria-controls={`room-menu-${room.id}`} onClick={onToggleMenu}>
+  const menuItemBase = "flex min-h-10 w-full items-center border-0 bg-transparent px-[15px] py-[10px] text-left font-['Source_Sans_3_Variable',sans-serif] text-[15px] leading-5 font-normal transition-[background-color,color] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none";
+  return <article className="room-card min-w-0 min-h-[244px] max-md:min-h-[148px] overflow-visible rounded-[20px] max-md:rounded-[15px] border border-border-strong bg-surface [background-image:linear-gradient(to_bottom,var(--room-accent)_0_6px,transparent_6px)] transition-[background-color,border-color] duration-[180ms] ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:hover:border-link [@media(hover:hover)_and_(pointer:fine)]:hover:bg-surface-soft active:border-link active:bg-canvas focus-within:border-focus-ring focus-within:bg-surface focus-within:outline-2 focus-within:outline-focus-ring" style={{ '--room-accent': room.accent } as React.CSSProperties}>
+    <div className="h-[6px] w-full overflow-hidden rounded-t-[19px]" />
+    <div className="relative flex min-h-[238px] flex-col gap-3 px-6 pt-[19px] pb-5 max-md:min-h-[142px] max-md:gap-[5px] max-md:px-[17px] max-md:py-3 [&_.room-card-id]:text-xs [&_.room-card-id]:leading-4 [&_.room-card-id]:text-muted">
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <h3 className="min-w-0 font-['Inter_Variable',sans-serif] text-[20px] max-md:text-lg leading-[1.25] font-semibold [overflow-wrap:anywhere]">{room.name}</h3>
+        <div className="relative shrink-0" data-room-menu>
+          <button ref={menuButtonRef} className="grid h-8 w-8 place-items-center border-0 bg-transparent p-0 transition-[background-color,border-color,color] duration-[120ms] ease-out motion-reduce:transition-none focus-visible:outline-[3px] focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-[0_0_0_2px_var(--focus-gap)] [&_img]:h-8 [&_img]:w-8" type="button" aria-label={`Más opciones de ${room.name}`} aria-haspopup="menu" aria-expanded={openMenu} aria-controls={`room-menu-${room.id}`} onClick={onToggleMenu}>
             <img src="/assets/figma/more-options.svg" alt="" />
           </button>
-          {openMenu && <div className="room-card-menu" id={`room-menu-${room.id}`} role="menu">
-            <button className="room-card-menu-item" type="button" role="menuitem" onClick={onEdit}>Editar sala</button>
-            <div className="room-card-menu-divider" role="separator" />
-            <button className="room-card-menu-item room-card-menu-item-danger" type="button" role="menuitem" onClick={onDelete}>Eliminar sala</button>
+          {openMenu && <div className="room-card-menu absolute top-[38px] right-0 z-[3] grid w-[200px] origin-top-right animate-[menu-enter_var(--motion-fast)_var(--ease-standard)] motion-reduce:animate-none rounded-[10px] border border-input-border bg-stage-active py-1 shadow-[0_8px_20px_-4px_rgb(0_0_0_/_28%)]" id={`room-menu-${room.id}`} role="menu">
+            <button className={`${menuItemBase} text-text hover:bg-subtle focus-visible:bg-subtle active:bg-canvas`} type="button" role="menuitem" onClick={onEdit}>Editar sala</button>
+            <div className="mx-[15px] my-1.5 h-px bg-input-border" role="separator" />
+            <button className={`${menuItemBase} text-error hover:bg-danger-surface focus-visible:bg-danger-surface active:bg-danger-deep`} type="button" role="menuitem" onClick={onDelete}>Eliminar sala</button>
           </div>}
         </div>
       </div>
-      {activityLabel && <p className="room-card-activity">{activityLabel}</p>}
-      <CopyRoomId id={room.id} />
-      {room.participants !== undefined && <p className="room-card-participants">{room.participants} {room.participants === 1 ? 'participante' : 'participantes'}</p>}
+      {activityLabel && <p className="text-sm leading-5 text-muted">{activityLabel}</p>}
+      <CopyRoomId id={room.id} compact />
+      {room.participants !== undefined && <p className="text-xs leading-4 text-muted">{room.participants} {room.participants === 1 ? 'participante' : 'participantes'}</p>}
       {connectedCount !== undefined && (
         connectedCount > 0 ? (
-          <p className="room-card-live">
-            <img src="/assets/figma/status-dot.svg" alt="" />
+          <p className="flex items-center gap-2 pt-1 text-xs leading-4 text-success">
+            <img className="h-2 w-2 shrink-0" src="/assets/figma/status-dot.svg" alt="" />
             {connectedCount} {connectedCount === 1 ? 'persona conectada ahora' : 'personas conectadas ahora'}
           </p>
         ) : (
-          <p className="room-card-live room-card-live-idle">Sin personas conectadas ahora</p>
+          <p className="flex items-center gap-2 pt-1 text-xs leading-4 text-muted">Sin personas conectadas ahora</p>
         )
       )}
-      <Link className="room-card-enter" to={`/salas/${encodeURIComponent(room.id)}`}>Entrar&nbsp; →</Link>
+      <Link className="mt-auto inline-flex min-h-[34px] items-center self-end font-['Inter_Variable',sans-serif] text-[13px] font-semibold text-link-strong" to={`/salas/${encodeURIComponent(room.id)}`}>Entrar&nbsp; →</Link>
     </div>
   </article>;
 }
@@ -474,22 +374,31 @@ function OwnRoomsDashboard({ uid }: { uid?: string }) {
   }
   const loading = status === 'loading';
   const error = status === 'error';
-  return <section className="dashboard">
-    <div className="dashboard-heading">
-      <div><PageTitle title="Tus salas" /><p>Continúa donde lo dejaste o crea una sala para tu próximo encuentro.</p></div>
-      <div className="actions"><button className="button primary" type="button" onClick={() => setManagementDialog({ kind: 'create' })}>＋ Crear sala</button><button ref={joinTrigger} className="button secondary" type="button" onClick={() => setManagementDialog({ kind: 'join' })}>＋ Unirse a sala</button></div>
+  const actionBtnBase = "inline-flex min-h-[48px] items-center justify-center gap-3 rounded-[10px] border px-5 py-3 font-['Inter_Variable',sans-serif] text-sm font-semibold cursor-pointer transition-[background-color,border-color,color,transform] duration-[120ms] ease-out motion-reduce:transition-none focus-visible:outline-[3px] focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-[0_0_0_2px_var(--focus-gap)] active:not-disabled:translate-y-px motion-reduce:active:not-disabled:translate-y-0 disabled:cursor-default disabled:border-dashed disabled:border-border-strong disabled:bg-surface disabled:text-muted disabled:opacity-100! max-md:min-w-0 max-md:min-h-[46px] max-md:px-2 max-md:rounded-[9px]";
+  const roomsGridClass = roomList.length === 1
+    ? 'grid min-w-0 gap-6 grid-cols-[minmax(0,524px)] max-md:grid-cols-1 max-md:gap-4'
+    : roomList.length === 2 || roomList.length === 3
+      ? 'grid min-w-0 gap-6 grid-cols-2 max-md:grid-cols-1 max-md:gap-4'
+      : 'grid min-w-0 gap-6 grid-cols-3 max-[1100px]:grid-cols-2 max-md:grid-cols-1 max-md:gap-4';
+  return <section className="mx-auto max-w-[1136px] px-8 max-md:px-0">
+    <div className="flex items-center justify-between gap-6 max-[1100px]:flex-col max-[1100px]:items-start max-md:gap-5">
+      <div><PageTitle title="Tus salas" /><p className="mt-1.5 text-muted">Continúa donde lo dejaste o crea una sala para tu próximo encuentro.</p></div>
+      <div className="flex flex-wrap gap-3 max-md:grid max-md:w-full max-md:grid-cols-2">
+        <button className={`${actionBtnBase} min-w-[176px] border-link bg-primary text-text hover:not-disabled:bg-primary-hover active:not-disabled:bg-primary-hover active:not-disabled:shadow-[inset_0_0_0_1px_var(--link)]`} type="button" onClick={() => setManagementDialog({ kind: 'create' })}>＋ Crear sala</button>
+        <button ref={joinTrigger} className={`${actionBtnBase} border-border-strong bg-surface text-link-strong hover:not-disabled:bg-subtle active:not-disabled:bg-canvas active:not-disabled:border-link active:not-disabled:shadow-[inset_0_0_0_1px_var(--link)]`} type="button" onClick={() => setManagementDialog({ kind: 'join' })}>＋ Unirse a sala</button>
+      </div>
     </div>
-    <section className="rooms-section" data-state={status} aria-labelledby="recent-rooms-title" aria-busy={loading}>
-      <div className="rooms-section-heading"><h2 id="recent-rooms-title">Salas recientes</h2>{status === 'success' && roomList.length > 0 && <span>{roomList.length} {roomList.length === 1 ? 'sala' : 'salas'}</span>}</div>
-      {partial && <p className="room-create-alert" role="status">No pudimos actualizar el listado completo.{' '}
-        <button className="button secondary" type="button" onClick={() => void loadRooms()}>Reintentar</button>
+    <section className="mt-[18px]" data-state={status} aria-labelledby="recent-rooms-title" aria-busy={loading}>
+      <div className={`mb-4 flex items-center justify-between gap-4 ${(status === 'empty' || status === 'error') ? 'sr-only' : ''}`}><h2 className="text-[20px]" id="recent-rooms-title">Salas recientes</h2>{status === 'success' && roomList.length > 0 && <span className="text-xs text-muted">{roomList.length} {roomList.length === 1 ? 'sala' : 'salas'}</span>}</div>
+      {partial && <p className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-xl border border-[#995360] bg-[#3a202b] px-4 py-3 text-sm leading-5 text-error [overflow-wrap:anywhere]" role="status">No pudimos actualizar el listado completo.{' '}
+        <button className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-border-strong bg-surface px-4 py-2 font-['Inter_Variable',sans-serif] text-sm font-semibold text-link-strong hover:bg-subtle" type="button" onClick={() => void loadRooms()}>Reintentar</button>
       </p>}
       {loading ? <>
-        <div className="dashboard-loading" role="status" aria-live="polite"><span className="dashboard-loading-badge">CARGANDO</span><p>Estamos obteniendo tus salas. Esto puede tardar unos segundos.</p></div>
-        <div className="rooms-grid room-skeleton-grid">{['#2857c5', '#0f766e', '#7c3aed', '#7c3aed'].map((accent, index) => <RoomCardSkeleton key={`${accent}-${index}`} accent={accent} />)}</div>
-      </> : error ? <RoomLoadError onRetry={() => void loadRooms()} message={loadError || 'No pudimos completar la operación.'} /> : status === 'empty' || roomList.length === 0 ? <EmptyRoomsState onCreate={() => setManagementDialog({ kind: 'create' })} /> : <div className="rooms-grid" data-room-count={roomList.length}>{roomList.map(room => <RoomCard key={room.id} room={room} openMenu={openMenu === room.id} onToggleMenu={() => setOpenMenu(current => current === room.id ? null : room.id)} onEdit={() => { setOpenMenu(null); setManagementDialog({ kind: 'edit', room }); }} onDelete={() => { setOpenMenu(null); setManagementDialog({ kind: 'delete', room }); }} menuButtonRef={button => { menuButtonRefs.current[room.id] = button; }} />)}</div>}
+        <div className="mt-3 mb-4" role="status" aria-live="polite"><span className="inline-flex min-h-7 w-[108px] items-center justify-start rounded-[14px] border border-primary-hover bg-[#172554] px-[9px] font-['Inter_Variable',sans-serif] text-xs font-medium text-link max-md:sr-only">CARGANDO</span><p className="mt-2 text-sm leading-5 text-muted">Estamos obteniendo tus salas. Esto puede tardar unos segundos.</p></div>
+        <div className="grid min-w-0 grid-cols-2 gap-6 max-md:grid-cols-1 max-md:gap-4">{['#2857c5', '#0f766e', '#7c3aed', '#7c3aed'].map((accent, index) => <RoomCardSkeleton key={`${accent}-${index}`} accent={accent} />)}</div>
+      </> : error ? <RoomLoadError onRetry={() => void loadRooms()} message={loadError || 'No pudimos completar la operación.'} /> : status === 'empty' || roomList.length === 0 ? <EmptyRoomsState onCreate={() => setManagementDialog({ kind: 'create' })} /> : <div className={roomsGridClass} data-room-count={roomList.length}>{roomList.map(room => <RoomCard key={room.id} room={room} openMenu={openMenu === room.id} onToggleMenu={() => setOpenMenu(current => current === room.id ? null : room.id)} onEdit={() => { setOpenMenu(null); setManagementDialog({ kind: 'edit', room }); }} onDelete={() => { setOpenMenu(null); setManagementDialog({ kind: 'delete', room }); }} menuButtonRef={button => { menuButtonRefs.current[room.id] = button; }} />)}</div>}
     </section>
-    <p className="private-note"><img src="/assets/figma/status-dot.svg" alt="" /> Comparte el ID solo con las personas invitadas.</p>
+    <p className="mt-6 max-md:mt-5 flex items-center gap-2 text-xs text-muted"><img src="/assets/figma/status-dot.svg" alt="" /> Comparte el ID solo con las personas invitadas.</p>
     {managementDialog?.kind === 'create' && <RoomCreation dialog onClose={() => setManagementDialog(null)} onCreated={handleCreateRoom} onReviewed={rooms => { sequence.current++; acceptRooms(rooms); setPartial(false); }} />}
     {managementDialog?.kind === 'join' && <JoinRoomDialog onClose={() => {
       joinTrigger.current?.focus();

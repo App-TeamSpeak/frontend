@@ -1,0 +1,75 @@
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    font-family: 'Source Sans 3 Variable', sans-serif;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3,
+  button,
+  label,
+  .brand,
+  nav {
+    font-family: 'Inter Variable', sans-serif;
+  }
+
+  h1 {
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  h2 {
+    font-size: 24px;
+    font-weight: 600;
+  }
+
+  a {
+    text-underline-offset: 4px;
+  }
+
+  button,
+  a,
+  input,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: .6;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px var(--focus-gap);
+  }
+
+  .skip-link {
+    position: absolute;
+    left: 1rem;
+    top: -4rem;
+    z-index: 10;
+    border-radius: 0.5rem;
+    background: var(--focus-ring);
+    color: var(--canvas);
+    padding: 0.75rem 1rem;
+    font-weight: 700;
+  }
+
+  .skip-link:focus {
+    top: 1rem;
+  }
+}
